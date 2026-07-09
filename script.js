@@ -2304,54 +2304,93 @@ function renderModalRows(rows) {
             fragment.appendChild(tr);
 
             if (hasSubRows) {
-                // Sort sub-items by date ascending
-                const sortedSubItems = [...item.items].sort((a, b) => {
-                    const dA = parseDateSafe(a['Date'] || a.date);
-                    const dB = parseDateSafe(b['Date'] || b.date);
-                    if (!dA && !dB) return 0;
-                    if (!dA) return 1;
-                    if (!dB) return -1;
-                    return dA - dB;
+                // Group items within this category by creditor/customer name (Step 2: name-level grouping)
+                const byName = {};
+                item.items.forEach(row => {
+                    const nameKey = (row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '').toString().trim() || 'ไม่ระบุชื่อ';
+                    if (!byName[nameKey]) byName[nameKey] = { count: 0, sum: 0, items: [] };
+                    byName[nameKey].count++;
+                    byName[nameKey].sum += getRowAmount(row, _modalType);
+                    byName[nameKey].items.push(row);
                 });
-                sortedSubItems.forEach((row, subIdx) => {
-                    const isLast = subIdx === sortedSubItems.length - 1;
 
-                    const subTr = document.createElement('tr');
-                    subTr.className = `modal-sub-row modal-cat-${i}`;
-                    subTr.style.display = 'none';
-                    subTr.style.background = 'rgba(255,255,255,0.02)';
+                const sortedNames = Object.keys(byName).sort((a, b) => byName[b].sum - byName[a].sum);
 
-                    const rawDate = row['Date'] || row.date || '';
-                    let displayDate = rawDate;
-                    try {
-                        const d = parseDateSafe(rawDate);
-                        if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    } catch (e) { }
+                sortedNames.forEach((nameKey, j) => {
+                    const nameItem = byName[nameKey];
+                    const nameClass = `modal-cat-${i}`;
+                    const nameSubClass = `modal-name-${i}-${j}`;
+                    const hasNameSubRows = nameItem.items.length > 0;
 
-                    const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
-                    const desc = row['Description'] || row.description || '-';
-                    const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
-                    const amount = getRowAmount(row, _modalType);
-                    const rowType = getRowType(row);
-                    const rowAmtClass = rowType === 'income' ? 'modal-amount-income' : 'modal-amount-expense';
+                    let nameAmtClass = 'modal-amount-expense';
+                    if (_modalType === 'income') nameAmtClass = 'modal-amount-income';
+                    else if (_modalType === 'balance') {
+                        nameAmtClass = nameItem.sum >= 0 ? 'modal-amount-income' : 'modal-amount-expense';
+                    }
 
-                    subTr.innerHTML = `
-                        <td style="color:#64748b; font-size:11px; text-align:center; white-space:nowrap;">
-                            <span>${displayDate}</span>
-                        </td>
-                        <td style="padding-left: 30px; text-align: left;">
-                            <span style="color:#cbd5e1; font-size:12px;" title="${creditor}">${creditor}</span>
-                        </td>
-                        <td style="text-align: left; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px;">
-                            <span style="color:#94a3b8; font-size:11px;" title="${desc}">${desc}</span>
-                        </td>
-                        <td style="color:#fcd34d; font-size:11px; text-align:left; padding-left:10px;">
-                            <span>${airCode}</span>
+                    const nameTr = document.createElement('tr');
+                    nameTr.className = `modal-sub-row ${nameClass}`;
+                    nameTr.style.display = 'none';
+                    nameTr.style.background = 'rgba(255,255,255,0.015)';
+                    nameTr.innerHTML = `
+                        <td></td>
+                        <td>
+                            <div style="display:flex; align-items:center; gap:8px; padding-left:22px;">
+                                ${hasNameSubRows ? `<button class="btn-ms-expand" onclick="toggleModalGroupExpand(event, '${nameSubClass}')" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#cbd5e1; border-radius:4px; width:20px; height:20px; font-size:11px; display:flex; align-items:center; justify-content:center; cursor:pointer;">+</button>` : ''}
+                                <span style="color:#e2e8f0; font-size:12px;" title="${nameKey}">${nameKey}</span>
+                            </div>
                         </td>
                         <td></td>
-                        <td class="numeric" style="color:#f97316; font-size:12px; font-weight:600;">฿${checkValue(Math.abs(amount))}</td>
+                        <td></td>
+                        <td style="font-size:12px; color:#94a3b8;">${nameItem.count} รายการ</td>
+                        <td class="numeric ${nameAmtClass}" style="font-size:12px;">฿${checkValue(nameItem.sum)}</td>
                     `;
-                    fragment.appendChild(subTr);
+                    fragment.appendChild(nameTr);
+
+                    // Sort sub-items by date ascending
+                    const sortedSubItems = [...nameItem.items].sort((a, b) => {
+                        const dA = parseDateSafe(a['Date'] || a.date);
+                        const dB = parseDateSafe(b['Date'] || b.date);
+                        if (!dA && !dB) return 0;
+                        if (!dA) return 1;
+                        if (!dB) return -1;
+                        return dA - dB;
+                    });
+                    sortedSubItems.forEach((row) => {
+                        const subTr = document.createElement('tr');
+                        subTr.className = `modal-sub-row ${nameClass} ${nameSubClass}`;
+                        subTr.style.display = 'none';
+                        subTr.style.background = 'rgba(255,255,255,0.02)';
+
+                        const rawDate = row['Date'] || row.date || '';
+                        let displayDate = rawDate;
+                        try {
+                            const d = parseDateSafe(rawDate);
+                            if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        } catch (e) { }
+
+                        const desc = row['Description'] || row.description || '-';
+                        const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
+                        const amount = getRowAmount(row, _modalType);
+
+                        subTr.innerHTML = `
+                            <td style="color:#64748b; font-size:11px; text-align:center; white-space:nowrap;">
+                                <span>${displayDate}</span>
+                            </td>
+                            <td style="padding-left: 50px; text-align: left;">
+                                <span style="color:#64748b; font-size:11px;">&#8618;</span>
+                            </td>
+                            <td style="text-align: left; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px;">
+                                <span style="color:#94a3b8; font-size:11px;" title="${desc}">${desc}</span>
+                            </td>
+                            <td style="color:#fcd34d; font-size:11px; text-align:left; padding-left:10px;">
+                                <span>${airCode}</span>
+                            </td>
+                            <td></td>
+                            <td class="numeric" style="color:#f97316; font-size:12px; font-weight:600;">฿${checkValue(Math.abs(amount))}</td>
+                        `;
+                        fragment.appendChild(subTr);
+                    });
                 });
             }
         });
@@ -2498,11 +2537,18 @@ function exportModalPdf(type) {
         });
     } else if (mode === 'group') {
         const expandedCategories = new Set();
+        const expandedNames = new Set(); // key: "<categoryIndexClass>||<nameLabel>"
         const uiExpandBtns = sourceTable.querySelectorAll('.btn-ms-expand');
         uiExpandBtns.forEach(btn => {
-            if (btn.textContent === '-') {
-                const catName = btn.closest('tr').querySelector('td:nth-child(2) span').textContent;
-                expandedCategories.add(catName);
+            if (btn.textContent !== '-') return;
+            const tr = btn.closest('tr');
+            const label = tr.querySelector('td:nth-child(2) span')?.textContent || '';
+            if (tr.classList.contains('modal-sub-row')) {
+                // Name-level row (nested under a category) — find its parent category class (modal-cat-N)
+                const catClass = Array.from(tr.classList).find(c => /^modal-cat-\d+$/.test(c));
+                if (catClass) expandedNames.add(`${catClass}||${label}`);
+            } else {
+                expandedCategories.add(label);
             }
         });
 
@@ -2554,31 +2600,30 @@ function exportModalPdf(type) {
             }
             tbodyClone.appendChild(tr);
 
-            if (expandedCategories.has(cat)) {
-                const sortedSubItems = [...item.items].sort((a, b) => {
-                    const dA = parseDateSafe(a['Date'] || a.date);
-                    const dB = parseDateSafe(b['Date'] || b.date);
-                    if (!dA && !dB) return 0;
-                    if (!dA) return 1;
-                    if (!dB) return -1;
-                    return dA - dB;
-                });
-                sortedSubItems.forEach((row) => {
-                    const subTr = document.createElement('tr');
-                    subTr.className = 'modal-sub-row';
-                    subTr.style.display = 'table-row'; 
-                    const rawDate = row['Date'] || row.date || '';
-                    let displayDate = rawDate;
-                    try {
-                        const d = parseDateSafe(rawDate);
-                        if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    } catch (e) { }
+            if (isBank) {
+                if (expandedCategories.has(cat)) {
+                    const sortedSubItems = [...item.items].sort((a, b) => {
+                        const dA = parseDateSafe(a['Date'] || a.date);
+                        const dB = parseDateSafe(b['Date'] || b.date);
+                        if (!dA && !dB) return 0;
+                        if (!dA) return 1;
+                        if (!dB) return -1;
+                        return dA - dB;
+                    });
+                    sortedSubItems.forEach((row) => {
+                        const subTr = document.createElement('tr');
+                        subTr.className = 'modal-sub-row';
+                        subTr.style.display = 'table-row';
+                        const rawDate = row['Date'] || row.date || '';
+                        let displayDate = rawDate;
+                        try {
+                            const d = parseDateSafe(rawDate);
+                            if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        } catch (e) { }
 
-                    const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
-                    const desc = row['Description'] || row.description || '-';
-                    const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
-
-                    if (isBank) {
+                        const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
+                        const desc = row['Description'] || row.description || '-';
+                        const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
                         const cIn = Number(row['Cash In'] || row.cashIn) || 0;
                         const cOut = Number(row['Cash Out'] || row.cashOut) || 0;
                         subTr.innerHTML = `
@@ -2590,18 +2635,75 @@ function exportModalPdf(type) {
                             <td class="numeric">฿${checkValue(cIn)}</td>
                             <td class="numeric">฿${checkValue(cOut)}</td>
                         `;
-                    } else {
+                        tbodyClone.appendChild(subTr);
+                    });
+                }
+            } else if (expandedCategories.has(cat)) {
+                // Name-level grouping (Step 2): group this category's items by creditor/customer name
+                const catClass = `modal-cat-${i}`;
+                const byName = {};
+                item.items.forEach(row => {
+                    const nameKey = (row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '').toString().trim() || 'ไม่ระบุชื่อ';
+                    if (!byName[nameKey]) byName[nameKey] = { count: 0, sum: 0, items: [] };
+                    byName[nameKey].count++;
+                    byName[nameKey].sum += getRowAmount(row, _modalType);
+                    byName[nameKey].items.push(row);
+                });
+
+                const sortedNames = Object.keys(byName).sort((a, b) => byName[b].sum - byName[a].sum);
+
+                sortedNames.forEach((nameKey) => {
+                    const nameItem = byName[nameKey];
+                    let nameAmtClass = _modalType === 'income' ? 'modal-amount-income' : 'modal-amount-expense';
+                    if (_modalType === 'balance') nameAmtClass = nameItem.sum >= 0 ? 'modal-amount-income' : 'modal-amount-expense';
+
+                    const nameTr = document.createElement('tr');
+                    nameTr.className = `modal-sub-row ${catClass}`;
+                    nameTr.style.display = 'table-row';
+                    nameTr.innerHTML = `
+                        <td></td>
+                        <td style="padding-left: 20px; text-align: left;"><span>${nameKey}</span></td>
+                        <td></td>
+                        <td></td>
+                        <td>${nameItem.count} รายการ</td>
+                        <td class="numeric ${nameAmtClass}">฿${checkValue(nameItem.sum)}</td>
+                    `;
+                    tbodyClone.appendChild(nameTr);
+
+                    if (!expandedNames.has(`${catClass}||${nameKey}`)) return;
+
+                    const sortedSubItems = [...nameItem.items].sort((a, b) => {
+                        const dA = parseDateSafe(a['Date'] || a.date);
+                        const dB = parseDateSafe(b['Date'] || b.date);
+                        if (!dA && !dB) return 0;
+                        if (!dA) return 1;
+                        if (!dB) return -1;
+                        return dA - dB;
+                    });
+                    sortedSubItems.forEach((row) => {
+                        const subTr = document.createElement('tr');
+                        subTr.className = `modal-sub-row ${catClass}`;
+                        subTr.style.display = 'table-row';
+                        const rawDate = row['Date'] || row.date || '';
+                        let displayDate = rawDate;
+                        try {
+                            const d = parseDateSafe(rawDate);
+                            if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        } catch (e) { }
+
+                        const desc = row['Description'] || row.description || '-';
+                        const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
                         const amount = getRowAmount(row, _modalType);
                         subTr.innerHTML = `
                             <td style="text-align:center;"><span>${displayDate}</span></td>
-                            <td style="padding-left: 20px; text-align: left;"><span>${creditor}</span></td>
+                            <td style="padding-left: 40px; text-align: left;"><span>&#8618;</span></td>
                             <td style="text-align: left;"><span>${desc}</span></td>
                             <td style="text-align:left; padding-left:10px;"><span>${airCode}</span></td>
                             <td></td>
                             <td class="numeric" style="color:#f97316; font-weight:600;">฿${checkValue(Math.abs(amount))}</td>
                         `;
-                    }
-                    tbodyClone.appendChild(subTr);
+                        tbodyClone.appendChild(subTr);
+                    });
                 });
             }
         });
