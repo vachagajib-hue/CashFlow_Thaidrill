@@ -3550,7 +3550,7 @@ function msCatClear() {
 
 function toggleMsCatDropdown(e) {
     if (e) e.stopPropagation();
-    const drop = document.getElementById('ms-category-dropdown');
+    const drop = document.getElementById('ms-summary-category-dropdown');
     drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
 }
 
@@ -3597,7 +3597,7 @@ function updateMsCategoryUI() {
 // Close dropdown on outside click
 document.addEventListener('click', (e) => {
     const wrap = document.getElementById('ms-cat-wrapper');
-    const drop = document.getElementById('ms-category-dropdown');
+    const drop = document.getElementById('ms-summary-category-dropdown');
     if (wrap && drop && drop.style.display === 'block' && !wrap.contains(e.target)) {
         drop.style.display = 'none';
     }
