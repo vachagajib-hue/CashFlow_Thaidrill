@@ -572,6 +572,13 @@
                             placeholder="&#3588;&#3657;&#3609;&#3627;&#3634;&#3619;&#3634;&#3618;&#3585;&#3634;&#3619;..."
                             oninput="filterModalTable()">
                     </div>
+                    <div class="modal-calendar-wrap">
+                        <button id="btn-modal-calendar" class="btn-toggle btn-calendar-toggle" onclick="toggleModalCalendarPopover(event)">
+                            <span class="cal-icon">&#128197;</span> &#3611;&#3600;&#3636;&#3607;&#3636;&#3609;
+                            <span id="modal-calendar-count" class="cal-count-badge" style="display:none;"></span>
+                        </button>
+                        <div id="modal-calendar-popover" class="modal-calendar-popover" style="display:none;"></div>
+                    </div>
                     <div class="modal-view-toggle">
                         <button id="btn-view-all" class="btn-toggle active" onclick="updateModalView('all')">
                             &#3619;&#3634;&#3618;&#3585;&#3634;&#3619;&#3607;&#3633;&#3657;&#3591;&#3627;&#3617;&#3604;
