@@ -2104,6 +2104,10 @@ let _isModalBankSource = false;
 // Selected rows (by object reference) for checkbox-based PDF export in the detail modal list view
 let _modalSelectedRows = new Set();
 
+// Calendar date filter (detail modal): selected dates use 'YYYY-MM-DD' keys (Gregorian)
+let _modalCalendarSelectedDates = new Set();
+let _modalCalendarViewMonth = new Date(); // month currently shown in the calendar popover
+
 const MODAL_LABELS = {
     'income-actual': { title: '📥 Income (Actual)', color: 'income' },
     'income-plan': { title: '📋 Income (Plan)', color: 'income' },
@@ -2155,6 +2159,9 @@ function openDetailModal(cardId) {
 
     _modalRows = rows;
     _modalSelectedRows = new Set();
+    _modalCalendarSelectedDates = new Set();
+    _modalCalendarViewMonth = new Date();
+    closeModalCalendarPopover();
 
     // Set header info
     const titleEl = document.getElementById('modal-title');
@@ -2166,13 +2173,17 @@ function openDetailModal(cardId) {
     // Show/hide menu based on modal source
     const modalTabs = document.querySelector('.modal-tabs');
     const modalViewToggle = document.querySelector('.modal-view-toggle');
+    const modalCalendarWrap = document.querySelector('.modal-calendar-wrap');
     if (_isModalBankSource) {
         if (modalTabs) modalTabs.style.display = 'none';
         if (modalViewToggle) modalViewToggle.style.display = 'none';
+        if (modalCalendarWrap) modalCalendarWrap.style.display = 'none';
     } else {
         if (modalTabs) modalTabs.style.display = '';
         if (modalViewToggle) modalViewToggle.style.display = '';
+        if (modalCalendarWrap) modalCalendarWrap.style.display = '';
     }
+    updateModalCalendarButtonState();
 
     // Reset tab to list
     if (typeof switchModalTab === 'function') switchModalTab('list');
@@ -3031,24 +3042,181 @@ function _showBankBackButton(bankName) {
 
 function filterModalTable() {
     const q = (document.getElementById('modal-search')?.value || '').toLowerCase();
-    if (!q) {
-        renderModalRows(_modalRows);
-        return;
+    let filtered = _modalRows;
+
+    // Apply calendar date filter first (if any dates are ticked in the calendar popover)
+    if (_modalCalendarSelectedDates.size > 0) {
+        filtered = filtered.filter(row => {
+            const d = parseDateSafe(row['Date'] || row.date);
+            if (!d || isNaN(d)) return false;
+            return _modalCalendarSelectedDates.has(dateKey(d));
+        });
     }
-    const filtered = _modalRows.filter(row => {
-        const fields = [
-            row['Description'], row.description,
-            row['Customer'], row.customer,
-            row['Vendor'], row.vendor,
-            row['Party'], row.party,
-            row['Name'], row.name,
-            row['Bank'], row.bank,
-            row['Category'], row.category,
-            row['Status'], row.status,
-        ].map(v => (v || '').toString().toLowerCase());
-        return fields.some(f => f.includes(q));
-    });
+
+    if (q) {
+        filtered = filtered.filter(row => {
+            const fields = [
+                row['Description'], row.description,
+                row['Customer'], row.customer,
+                row['Vendor'], row.vendor,
+                row['Party'], row.party,
+                row['Name'], row.name,
+                row['Bank'], row.bank,
+                row['Category'], row.category,
+                row['Status'], row.status,
+            ].map(v => (v || '').toString().toLowerCase());
+            return fields.some(f => f.includes(q));
+        });
+    }
+
     renderModalRows(filtered);
+}
+
+// -------------------------------------------------
+// CALENDAR DATE FILTER (Income/Expense detail modal)
+// -------------------------------------------------
+function dateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Map of 'YYYY-MM-DD' -> { income: bool, expense: bool }, built from the broader filtered
+// transaction set so the calendar shows income/expense dots regardless of which single-type
+// modal (income or expense) is currently open.
+function buildModalCalendarDateMap() {
+    const map = {};
+    const source = typeof _lastFilteredTransactions !== 'undefined' && _lastFilteredTransactions ? _lastFilteredTransactions : [];
+    source.forEach(row => {
+        const d = parseDateSafe(row['Date'] || row.date);
+        if (!d || isNaN(d)) return;
+        const key = dateKey(d);
+        const type = getRowType(row);
+        if (!map[key]) map[key] = { income: false, expense: false };
+        if (type === 'income') map[key].income = true;
+        else if (type === 'expense') map[key].expense = true;
+    });
+    return map;
+}
+
+function toggleModalCalendarPopover(e) {
+    if (e) e.stopPropagation();
+    const pop = document.getElementById('modal-calendar-popover');
+    if (!pop) return;
+    const isOpen = pop.style.display !== 'none';
+    if (isOpen) {
+        closeModalCalendarPopover();
+    } else {
+        // Default the visible month to the month of the most recent row, if we don't have one yet
+        if (!window._modalCalendarUserNavigated) {
+            const withDates = _modalRows.map(r => parseDateSafe(r['Date'] || r.date)).filter(d => d && !isNaN(d));
+            if (withDates.length > 0) {
+                const latest = new Date(Math.max.apply(null, withDates.map(d => d.getTime())));
+                _modalCalendarViewMonth = new Date(latest.getFullYear(), latest.getMonth(), 1);
+            }
+        }
+        pop.style.display = 'block';
+        renderModalCalendarPopover();
+        document.addEventListener('click', _modalCalendarOutsideClickHandler);
+    }
+}
+
+function closeModalCalendarPopover() {
+    const pop = document.getElementById('modal-calendar-popover');
+    if (pop) pop.style.display = 'none';
+    document.removeEventListener('click', _modalCalendarOutsideClickHandler);
+}
+
+function _modalCalendarOutsideClickHandler(e) {
+    const wrap = document.querySelector('.modal-calendar-wrap');
+    if (wrap && !wrap.contains(e.target)) closeModalCalendarPopover();
+}
+
+function navModalCalendarMonth(delta) {
+    window._modalCalendarUserNavigated = true;
+    _modalCalendarViewMonth = new Date(_modalCalendarViewMonth.getFullYear(), _modalCalendarViewMonth.getMonth() + delta, 1);
+    renderModalCalendarPopover();
+}
+
+function toggleModalCalendarDay(key) {
+    if (_modalCalendarSelectedDates.has(key)) {
+        _modalCalendarSelectedDates.delete(key);
+    } else {
+        _modalCalendarSelectedDates.add(key);
+    }
+    renderModalCalendarPopover();
+    updateModalCalendarButtonState();
+    filterModalTable();
+}
+
+function clearModalCalendarSelection() {
+    _modalCalendarSelectedDates = new Set();
+    renderModalCalendarPopover();
+    updateModalCalendarButtonState();
+    filterModalTable();
+}
+
+function updateModalCalendarButtonState() {
+    const btn = document.getElementById('btn-modal-calendar');
+    const badge = document.getElementById('modal-calendar-count');
+    if (!btn || !badge) return;
+    const count = _modalCalendarSelectedDates.size;
+    if (count > 0) {
+        btn.classList.add('has-selection');
+        badge.style.display = 'inline-flex';
+        badge.textContent = count;
+    } else {
+        btn.classList.remove('has-selection');
+        badge.style.display = 'none';
+        badge.textContent = '';
+    }
+}
+
+const THAI_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+function renderModalCalendarPopover() {
+    const pop = document.getElementById('modal-calendar-popover');
+    if (!pop) return;
+
+    const dateMap = buildModalCalendarDateMap();
+    const year = _modalCalendarViewMonth.getFullYear();
+    const month = _modalCalendarViewMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startWeekday = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    let cellsHtml = '';
+    for (let i = 0; i < startWeekday; i++) {
+        cellsHtml += `<div class="cal-day cal-empty"></div>`;
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+        const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const info = dateMap[key];
+        const isSelected = _modalCalendarSelectedDates.has(key);
+        let dotsHtml = '';
+        if (info && (info.income || info.expense)) {
+            dotsHtml = `<div class="cal-dots">${info.income ? '<span class="cal-dot income"></span>' : ''}${info.expense ? '<span class="cal-dot expense"></span>' : ''}</div>`;
+        }
+        cellsHtml += `<div class="cal-day${isSelected ? ' selected' : ''}" onclick="toggleModalCalendarDay('${key}')">${day}${dotsHtml}</div>`;
+    }
+
+    const selectedCount = _modalCalendarSelectedDates.size;
+
+    pop.innerHTML = `
+        <div class="cal-header">
+            <button type="button" class="cal-nav-btn" onclick="navModalCalendarMonth(-1)">&#8249;</button>
+            <span class="cal-title">${THAI_MONTHS[month]} ${year + 543}</span>
+            <button type="button" class="cal-nav-btn" onclick="navModalCalendarMonth(1)">&#8250;</button>
+        </div>
+        <div class="cal-weekdays">${THAI_WEEKDAYS.map(w => `<div class="cal-weekday">${w}</div>`).join('')}</div>
+        <div class="cal-grid">${cellsHtml}</div>
+        <div class="cal-footer">
+            <span class="cal-footer-text">${selectedCount > 0 ? `เลือกแล้ว ${selectedCount} วัน` : 'ยังไม่ได้เลือกวันที่'}</span>
+            <button type="button" class="cal-clear-btn" onclick="clearModalCalendarSelection()" ${selectedCount === 0 ? 'disabled style="opacity:.4; cursor:default;"' : ''}>ล้างที่เลือก</button>
+        </div>
+    `;
+
+    // Prevent clicks inside the popover from bubbling to the outside-click handler
+    pop.onclick = (e) => e.stopPropagation();
 }
 
 function closeDetailModal(event, force = false) {
@@ -3061,6 +3229,7 @@ function closeDetailModal(event, force = false) {
 // ESC key to close any open modal
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+        closeModalCalendarPopover();
         closeDetailModal(null, true);
         closeBankDetailModal(null, true);
     }
