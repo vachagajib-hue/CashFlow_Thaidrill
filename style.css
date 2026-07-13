@@ -1730,6 +1730,23 @@ select option:hover {
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
+/* Row-select checkboxes for PDF export */
+#modal-table th.modal-checkbox-col,
+#modal-table td.modal-checkbox-col {
+    padding-left: 14px;
+    padding-right: 4px;
+    width: 32px;
+}
+
+#modal-table .modal-row-checkbox,
+#modal-table #modal-select-all-cb {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #38bdf8;
+    vertical-align: middle;
+}
+
 .numeric {
     font-family: 'Inter', 'Roboto Mono', monospace;
     font-weight: 600;
