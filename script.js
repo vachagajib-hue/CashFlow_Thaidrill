@@ -2874,6 +2874,7 @@ function exportModalPdf(type) {
   .modal-amount-income { color: #15803d !important; font-weight: 700; }
   .modal-amount-expense { color: #b91c1c !important; font-weight: 700; }
   .ftr { border-top: 2px solid #1e3a5f; padding-top: 10px; display: flex; justify-content: space-between; font-weight: 700; font-size: 10pt; color: #1e3a5f; margin-top: 10px; }
+  .sel-badge { display: inline-block; margin-top: 6px; padding: 3px 12px; border-radius: 12px; background: #fef9c3; color: #92400e; font-weight: 700; font-size: 8pt; border: 1px solid #fde68a; }
   .sig-block { display: flex; justify-content: space-between; margin-top: 46px; page-break-inside: avoid; }
   .sig-col { width: 30%; text-align: center; font-size: 8.5pt; color: #1e293b; }
   .sig-line { border-bottom: 1px solid #64748b; height: 34px; margin: 0 6px 8px 6px; }
@@ -2886,7 +2887,8 @@ function exportModalPdf(type) {
 <div class="hdr">
   <h1>รายงานสรุปข้อมูลทางการเงิน</h1>
   <h2>${title}</h2>
-  <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : 'รายการละเอียด'} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}${usingRowSelection ? ' &nbsp;|&nbsp; (เลือกเฉพาะรายการที่ติ๊ก)' : ''}</p>
+  <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : 'รายการละเอียด'} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}</p>
+  ${usingRowSelection ? `<p class="sel-badge">เฉพาะรายการที่เลือก</p>` : ''}
 </div>
 ${tableHtml}
 <div class="ftr"><span>${footerCount}</span><span>${footerTotal}</span></div>
