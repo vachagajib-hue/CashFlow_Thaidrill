@@ -51,6 +51,19 @@ function parseDateSafe(dateVal) {
     return null;
 }
 
+// Sort a list of transaction-like rows by their Date field, ascending (earliest first).
+// Rows with an unparseable/missing date are pushed to the end.
+function sortRowsByDateAsc(arr) {
+    return arr.slice().sort((a, b) => {
+        const dA = parseDateSafe(a['Date'] || a.date);
+        const dB = parseDateSafe(b['Date'] || b.date);
+        if (!dA && !dB) return 0;
+        if (!dA) return 1;
+        if (!dB) return -1;
+        return dA - dB;
+    });
+}
+
 // Utility: Normalize Name
 // ใช้ชื่อตามชีต 100% — ไม่ตัดคำนำหน้า/คำต่อท้าย/สาขา ใด ๆ
 // ทำแค่ 2 อย่างเพื่อกันชื่อพิมพ์พลาด:
@@ -1791,7 +1804,7 @@ function openBankDetailModal(bankFullName, bankType, accountNum) {
     const bankTypeUpper = bankType.toUpperCase();
     const acctLast4 = last4digits(accountNum);
 
-    const rows = allTransactions.filter(row => {
+    let rows = allTransactions.filter(row => {
         const b = (row['Bank'] || row.bank || '').trim();
 
         // ① Exact match
@@ -1823,6 +1836,8 @@ function openBankDetailModal(bankFullName, bankType, accountNum) {
         }
         return true;
     });
+
+    rows = sortRowsByDateAsc(rows);
 
     _bankModalRows = rows;
 
@@ -2155,6 +2170,10 @@ function openDetailModal(cardId) {
         rows = [...fromPlans, ...fromTx];
     } else if (cardId === 'selected-balance') {
         rows = [...bankBalances];
+    }
+
+    if (cardId !== 'selected-balance') {
+        rows = sortRowsByDateAsc(rows);
     }
 
     _modalRows = rows;
