@@ -7,9 +7,10 @@
     <title>CashFlow</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=20260713-sort1">
+    <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 
 <body>
@@ -539,6 +540,16 @@
                         </div>
                     </div>
                     <div class="modal-header-right">
+                        <button onclick="exportModalExcel('detail')" class="btn-excel-export">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="9.5" y1="13" x2="14.5" y2="18" />
+                                <line x1="14.5" y1="13" x2="9.5" y2="18" />
+                            </svg>
+                            &#3626;&#3656;&#3591;&#3629;&#3629;&#3585; Excel
+                        </button>
                         <button onclick="exportModalPdf('detail')" class="btn-pdf-export">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2.5">
@@ -571,13 +582,6 @@
                         <input type="text" id="modal-search"
                             placeholder="&#3588;&#3657;&#3609;&#3627;&#3634;&#3619;&#3634;&#3618;&#3585;&#3634;&#3619;..."
                             oninput="filterModalTable()">
-                    </div>
-                    <div class="modal-calendar-wrap">
-                        <button id="btn-modal-calendar" class="btn-toggle btn-calendar-toggle" onclick="toggleModalCalendarPopover(event)">
-                            <span class="cal-icon">&#128197;</span> &#3611;&#3599;&#3636;&#3607;&#3636;&#3609;
-                            <span id="modal-calendar-count" class="cal-count-badge" style="display:none;"></span>
-                        </button>
-                        <div id="modal-calendar-popover" class="modal-calendar-popover" style="display:none;"></div>
                     </div>
                     <div class="modal-view-toggle">
                         <button id="btn-view-all" class="btn-toggle active" onclick="updateModalView('all')">
@@ -631,6 +635,7 @@
                             &#3619;&#3634;&#3618;&#3585;&#3634;&#3619;</span>
                     </div>
                     <div class="modal-header-actions">
+                        <button class="btn-export-excel" onclick="exportModalExcel('bank')">💾 Excel</button>
                         <button class="btn-export-pdf" onclick="exportModalPdf('bank')">💾 PDF</button>
                         <button class="modal-close" onclick="closeBankDetailModal(null, true)">×</button>
                     </div>
@@ -714,7 +719,7 @@
             </div>
         </div>
 
-        <script src="script.js?v=20260713-sort1"></script>
+        <script src="script.js"></script>
 </body>
 
 </html>
