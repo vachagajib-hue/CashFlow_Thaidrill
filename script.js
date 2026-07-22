@@ -51,19 +51,6 @@ function parseDateSafe(dateVal) {
     return null;
 }
 
-// Sort a list of transaction-like rows by their Date field, ascending (earliest first).
-// Rows with an unparseable/missing date are pushed to the end.
-function sortRowsByDateAsc(arr) {
-    return arr.slice().sort((a, b) => {
-        const dA = parseDateSafe(a['Date'] || a.date);
-        const dB = parseDateSafe(b['Date'] || b.date);
-        if (!dA && !dB) return 0;
-        if (!dA) return 1;
-        if (!dB) return -1;
-        return dA - dB;
-    });
-}
-
 // Utility: Normalize Name
 // ใช้ชื่อตามชีต 100% — ไม่ตัดคำนำหน้า/คำต่อท้าย/สาขา ใด ๆ
 // ทำแค่ 2 อย่างเพื่อกันชื่อพิมพ์พลาด:
@@ -1804,7 +1791,7 @@ function openBankDetailModal(bankFullName, bankType, accountNum) {
     const bankTypeUpper = bankType.toUpperCase();
     const acctLast4 = last4digits(accountNum);
 
-    let rows = allTransactions.filter(row => {
+    const rows = allTransactions.filter(row => {
         const b = (row['Bank'] || row.bank || '').trim();
 
         // ① Exact match
@@ -1836,8 +1823,6 @@ function openBankDetailModal(bankFullName, bankType, accountNum) {
         }
         return true;
     });
-
-    rows = sortRowsByDateAsc(rows);
 
     _bankModalRows = rows;
 
@@ -2116,13 +2101,6 @@ let _modalType = '';  // 'income' | 'expense' | 'balance'
 let _modalTab = 'list'; // 'list' | 'bank'
 let _isModalBankSource = false;
 
-// Selected rows (by object reference) for checkbox-based PDF export in the detail modal list view
-let _modalSelectedRows = new Set();
-
-// Calendar date filter (detail modal): selected dates use 'YYYY-MM-DD' keys (Gregorian)
-let _modalCalendarSelectedDates = new Set();
-let _modalCalendarViewMonth = new Date(); // month currently shown in the calendar popover
-
 const MODAL_LABELS = {
     'income-actual': { title: '📥 Income (Actual)', color: 'income' },
     'income-plan': { title: '📋 Income (Plan)', color: 'income' },
@@ -2172,15 +2150,7 @@ function openDetailModal(cardId) {
         rows = [...bankBalances];
     }
 
-    if (cardId !== 'selected-balance') {
-        rows = sortRowsByDateAsc(rows);
-    }
-
     _modalRows = rows;
-    _modalSelectedRows = new Set();
-    _modalCalendarSelectedDates = new Set();
-    _modalCalendarViewMonth = new Date();
-    closeModalCalendarPopover();
 
     // Set header info
     const titleEl = document.getElementById('modal-title');
@@ -2192,17 +2162,13 @@ function openDetailModal(cardId) {
     // Show/hide menu based on modal source
     const modalTabs = document.querySelector('.modal-tabs');
     const modalViewToggle = document.querySelector('.modal-view-toggle');
-    const modalCalendarWrap = document.querySelector('.modal-calendar-wrap');
     if (_isModalBankSource) {
         if (modalTabs) modalTabs.style.display = 'none';
         if (modalViewToggle) modalViewToggle.style.display = 'none';
-        if (modalCalendarWrap) modalCalendarWrap.style.display = 'none';
     } else {
         if (modalTabs) modalTabs.style.display = '';
         if (modalViewToggle) modalViewToggle.style.display = '';
-        if (modalCalendarWrap) modalCalendarWrap.style.display = '';
     }
-    updateModalCalendarButtonState();
 
     // Reset tab to list
     if (typeof switchModalTab === 'function') switchModalTab('list');
@@ -2395,7 +2361,7 @@ function renderModalRows(rows) {
         const countEl = document.getElementById('modal-row-count');
         if (countEl) countEl.textContent = `รวม ${totalCount} รายการ (${sortedKeys.length} หมวดหมู่)`;
     } else {
-        thead.innerHTML = `<tr><th class="modal-checkbox-col" style="width:32px; text-align:center;"><input type="checkbox" id="modal-select-all-cb" title="เลือกทั้งหมด" onchange="toggleSelectAllModalRows(this)"></th><th>#</th><th>วันที่</th><th>คำอธิบาย</th><th>เจ้าหนี้ / ลูกหนี้</th><th>Bank</th><th>Category</th><th>Status</th><th style="text-align:left; padding-left:10px;">Air Code</th><th class="numeric">จำนวนเงิน (฿)</th></tr>`;
+        thead.innerHTML = `<tr><th>#</th><th>วันที่</th><th>คำอธิบาย</th><th>เจ้าหนี้ / ลูกหนี้</th><th>Bank</th><th>Category</th><th>Status</th><th style="text-align:left; padding-left:10px;">Air Code</th><th class="numeric">จำนวนเงิน (฿)</th></tr>`;
 
         // Calculate total first across ALL rows
         rows.forEach(row => {
@@ -2435,27 +2401,14 @@ function renderModalRows(rows) {
                 <td style="text-align:left; padding-left:10px;"><span style="color:#fcd34d; font-weight:600;">${airCode}</span></td>
                 <td class="numeric ${amtClass}">฿${checkValue(numAmt)}</td>
             `;
-            const cbTd = document.createElement('td');
-            cbTd.className = 'modal-checkbox-col';
-            cbTd.style.textAlign = 'center';
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.className = 'modal-row-checkbox';
-            cb.checked = _modalSelectedRows.has(row);
-            cb.addEventListener('change', () => toggleModalRowSelect(cb, row));
-            cbTd.appendChild(cb);
-            tr.insertBefore(cbTd, tr.firstChild);
             fragment.appendChild(tr);
         });
 
         if (rows.length > (window._modalRenderLimit || 200)) {
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td colspan="10" style="text-align:center; padding:15px; cursor:pointer; color:#38bdf8; font-weight:bold; background:rgba(255,255,255,0.05); transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'" onclick="loadMoreModalRows()">👇 โหลดเพิ่มเติม... (เหลืออีก ${rows.length - (window._modalRenderLimit || 200)} รายการ)</td>`;
+            tr.innerHTML = `<td colspan="8" style="text-align:center; padding:15px; cursor:pointer; color:#38bdf8; font-weight:bold; background:rgba(255,255,255,0.05); transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'" onclick="loadMoreModalRows()">👇 โหลดเพิ่มเติม... (เหลืออีก ${rows.length - (window._modalRenderLimit || 200)} รายการ)</td>`;
             fragment.appendChild(tr);
         }
-
-        // Reflect current selection state on the "select all" header checkbox
-        updateModalSelectAllHeaderState(rows);
 
         tbody.appendChild(fragment);
 
@@ -2497,70 +2450,22 @@ function loadMoreModalRows() {
     filterModalTable();
 }
 
-// -------------------------------------------------
-// CHECKBOX ROW SELECTION (for PDF export of detail modal)
-// -------------------------------------------------
-function toggleModalRowSelect(checkboxEl, row) {
-    if (checkboxEl.checked) {
-        _modalSelectedRows.add(row);
-    } else {
-        _modalSelectedRows.delete(row);
-    }
-    updateModalSelectAllHeaderState(_currentModalFilteredRows || []);
-}
-
-function toggleSelectAllModalRows(headerCheckboxEl) {
-    const rows = _currentModalFilteredRows || [];
-    if (headerCheckboxEl.checked) {
-        rows.forEach(r => _modalSelectedRows.add(r));
-    } else {
-        rows.forEach(r => _modalSelectedRows.delete(r));
-    }
-    const tbody = document.getElementById('modal-table-body');
-    if (tbody) {
-        tbody.querySelectorAll('.modal-row-checkbox').forEach(cb => { cb.checked = headerCheckboxEl.checked; });
-    }
-}
-
-function updateModalSelectAllHeaderState(rows) {
-    const headerCb = document.getElementById('modal-select-all-cb');
-    if (!headerCb) return;
-    const selectedCount = rows.filter(r => _modalSelectedRows.has(r)).length;
-    headerCb.checked = rows.length > 0 && selectedCount === rows.length;
-    headerCb.indeterminate = selectedCount > 0 && selectedCount < rows.length;
-}
-
 function exportModalPdf(type) {
     const isBank = type === 'bank';
     const sourceTable = document.getElementById(isBank ? 'bank-modal-table' : 'modal-table');
     const title = document.getElementById(isBank ? 'bank-modal-title' : 'modal-title').textContent;
     const mode = isBank ? _bankModalViewMode : _detailModalViewMode;
 
-    let footerCount = document.getElementById(isBank ? 'bank-modal-row-count' : 'modal-row-count').textContent;
-    let footerTotal = document.getElementById(isBank ? 'bank-modal-totals' : 'modal-total-amount').innerText.replace(/฿/g, '');
+    const footerCount = document.getElementById(isBank ? 'bank-modal-row-count' : 'modal-row-count').textContent;
+    const footerTotal = document.getElementById(isBank ? 'bank-modal-totals' : 'modal-total-amount').innerText.replace(/฿/g, '');
 
     // We will generate the FULL table body for export
     // If it's the detail modal, use the currently filtered rows if they exist
-    let rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
-
-    // If the user ticked specific checkboxes in the detail (Income/Expense) list view, export only those rows
-    const usingRowSelection = !isBank && !_isModalBankSource && mode !== 'group' && _modalSelectedRows.size > 0;
-    if (usingRowSelection) {
-        const filteredBySelection = rows.filter(r => _modalSelectedRows.has(r));
-        if (filteredBySelection.length > 0) {
-            rows = filteredBySelection;
-            footerCount = `${rows.length} รายการ`;
-            let selectedSum = 0;
-            rows.forEach(r => { selectedSum += getRowAmount(r, _modalType); });
-            footerTotal = checkValue(selectedSum);
-        }
-    }
-
+    const rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
+    
     // Create a container for the export table
     const tableClone = sourceTable.cloneNode(true);
     tableClone.removeAttribute('id');
-    const checkboxHeaderTh = tableClone.querySelector('thead th.modal-checkbox-col');
-    if (checkboxHeaderTh) checkboxHeaderTh.remove();
     const tbodyClone = tableClone.querySelector('tbody');
     tbodyClone.innerHTML = '';
 
@@ -2904,12 +2809,6 @@ function exportModalPdf(type) {
   .modal-amount-income { color: #15803d !important; font-weight: 700; }
   .modal-amount-expense { color: #b91c1c !important; font-weight: 700; }
   .ftr { border-top: 2px solid #1e3a5f; padding-top: 10px; display: flex; justify-content: space-between; font-weight: 700; font-size: 10pt; color: #1e3a5f; margin-top: 10px; }
-  .sel-badge { display: inline-block; margin-top: 6px; padding: 3px 12px; border-radius: 12px; background: #fef9c3; color: #92400e; font-weight: 700; font-size: 8pt; border: 1px solid #fde68a; }
-  .sig-block { display: flex; justify-content: space-between; margin-top: 46px; page-break-inside: avoid; }
-  .sig-col { width: 30%; text-align: center; font-size: 8.5pt; color: #1e293b; }
-  .sig-line { border-bottom: 1px solid #64748b; height: 34px; margin: 0 6px 8px 6px; }
-  .sig-label { font-weight: 700; color: #1e3a5f; }
-  .sig-date { color: #64748b; font-size: 7.5pt; margin-top: 4px; }
   @media print { @page { size: A4 portrait; margin: 1cm; } body { padding: 0; } }
 </style>
 </head>
@@ -2918,15 +2817,9 @@ function exportModalPdf(type) {
   <h1>รายงานสรุปข้อมูลทางการเงิน</h1>
   <h2>${title}</h2>
   <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : 'รายการละเอียด'} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}</p>
-  ${usingRowSelection ? `<p class="sel-badge">เฉพาะรายการที่เลือก</p>` : ''}
 </div>
 ${tableHtml}
 <div class="ftr"><span>${footerCount}</span><span>${footerTotal}</span></div>
-<div class="sig-block">
-  <div class="sig-col"><div class="sig-line"></div><div class="sig-label">ผู้จัดทำ</div><div class="sig-date">วันที่ ....../....../......</div></div>
-  <div class="sig-col"><div class="sig-line"></div><div class="sig-label">ผู้ตรวจสอบ</div><div class="sig-date">วันที่ ....../....../......</div></div>
-  <div class="sig-col"><div class="sig-line"></div><div class="sig-label">ผู้รับเอกสาร</div><div class="sig-date">วันที่ ....../....../......</div></div>
-</div>
 <script>
   window.onload=function(){
     try { history.pushState({}, '', 'Report'); } catch(e) {}
@@ -2935,6 +2828,219 @@ ${tableHtml}
 <\/script>
 </body></html>`);
     printWindow.document.close();
+}
+
+// -------------------------------------------------
+// EXPORT MODAL TO EXCEL (.xlsx) — Income / Expense / Bank
+// -------------------------------------------------
+function exportModalExcel(type) {
+    if (typeof XLSX === 'undefined') {
+        alert('ไม่พบไลบรารี Excel (XLSX.js) กรุณาโหลดหน้าเว็บใหม่แล้วลองอีกครั้ง');
+        return;
+    }
+
+    const isBank = type === 'bank';
+    const titleEl = document.getElementById(isBank ? 'bank-modal-title' : 'modal-title');
+    const title = (titleEl ? titleEl.textContent : 'รายงาน').trim();
+    const mode = isBank ? _bankModalViewMode : _detailModalViewMode;
+    const rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
+
+    const aoa = [];
+    let colCount = 5;
+
+    // ===== Header: ชื่อบริษัท + ชื่อรายงาน + วันที่ =====
+    aoa.push(['Thaidrill']);
+    aoa.push([title]);
+    aoa.push(['วันที่ส่งออก: ' + new Date().toLocaleString('th-TH')]);
+    aoa.push([]);
+
+    if (!isBank && _isModalBankSource) {
+        // ===== Selected Balance table =====
+        colCount = 5;
+        aoa.push(['#', 'Bank', 'Account No', 'Air Code', 'Selected Balance (฿)']);
+        const filtered = rows.filter(b => {
+            const sbKey = Object.keys(b).find(k => {
+                const normalized = k.toLowerCase().replace(/\s/g, '');
+                return normalized.includes('selected') && normalized.includes('balance');
+            });
+            return parseSafe(sbKey ? b[sbKey] : 0) !== 0;
+        });
+        let total = 0;
+        filtered.forEach((b, i) => {
+            const bankName = (b['Bank Name'] || b.bankName || b.bank || '').toString().trim();
+            const accountNum = (b['Account No'] || b.accountNo || b.account || '-').toString().trim();
+            const airCode = String(b['Air Code'] || b.airCode || b['Air code'] || b['air code'] || '-').trim();
+            const sbKey = Object.keys(b).find(k => k.toLowerCase().replace(/\s/g, '').includes('selected') && k.toLowerCase().replace(/\s/g, '').includes('balance'));
+            const amt = parseSafe(sbKey ? b[sbKey] : 0);
+            total += amt;
+            aoa.push([i + 1, bankName, accountNum, airCode, amt]);
+        });
+        aoa.push(['', '', '', 'รวมทั้งหมด', total]);
+    } else if (mode === 'group') {
+        // ===== Group summary (by Category), รวมรายละเอียดรายการย่อยครบทุกแถว =====
+        const grouped = {};
+        rows.forEach(row => {
+            const cat = row['Category'] || row.category || 'ไม่ระบุหมวดหมู่';
+            if (isBank) {
+                if (!grouped[cat]) grouped[cat] = { count: 0, in: 0, out: 0, items: [] };
+                grouped[cat].count++;
+                grouped[cat].in += Number(row['Cash In'] || row.cashIn) || 0;
+                grouped[cat].out += Number(row['Cash Out'] || row.cashOut) || 0;
+            } else {
+                if (!grouped[cat]) grouped[cat] = { count: 0, sum: 0, items: [] };
+                grouped[cat].count++;
+                grouped[cat].sum += getRowAmount(row, _modalType);
+            }
+            grouped[cat].items.push(row);
+        });
+
+        const sortedKeys = Object.keys(grouped).sort((a, b) => {
+            if (isBank) return (grouped[b].in + grouped[b].out) - (grouped[a].in + grouped[a].out);
+            return grouped[b].sum - grouped[a].sum;
+        });
+
+        if (isBank) {
+            colCount = 7;
+            aoa.push(['#', 'Category', 'คำอธิบาย', 'Air Code', 'รายการ', 'Cash In (฿)', 'Cash Out (฿)']);
+        } else {
+            colCount = 6;
+            aoa.push(['#', 'Category', 'คำอธิบาย', 'Air Code', 'รายการ', 'จำนวนเงิน (฿)']);
+        }
+
+        let grandIn = 0, grandOut = 0, grandSum = 0;
+
+        sortedKeys.forEach((cat, i) => {
+            const item = grouped[cat];
+            if (isBank) {
+                grandIn += item.in; grandOut += item.out;
+                aoa.push([i + 1, cat, '', '', item.count + ' รายการ', item.in, item.out]);
+            } else {
+                grandSum += item.sum;
+                aoa.push([i + 1, cat, '', '', item.count + ' รายการ', item.sum]);
+            }
+
+            const sortedSubItems = [...item.items].sort((a, b) => {
+                const dA = parseDateSafe(a['Date'] || a.date);
+                const dB = parseDateSafe(b['Date'] || b.date);
+                if (!dA && !dB) return 0;
+                if (!dA) return 1;
+                if (!dB) return -1;
+                return dA - dB;
+            });
+
+            sortedSubItems.forEach(row => {
+                const rawDate = row['Date'] || row.date || '';
+                let displayDate = rawDate;
+                try {
+                    const d = parseDateSafe(rawDate);
+                    if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                } catch (e) { }
+
+                const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
+                const desc = row['Description'] || row.description || '-';
+                const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
+
+                if (isBank) {
+                    const cIn = Number(row['Cash In'] || row.cashIn) || 0;
+                    const cOut = Number(row['Cash Out'] || row.cashOut) || 0;
+                    aoa.push(['', '   ' + displayDate + ' - ' + creditor, desc, airCode, '', cIn, cOut]);
+                } else {
+                    const amount = Math.abs(getRowAmount(row, _modalType));
+                    aoa.push(['', '   ' + displayDate + ' - ' + creditor, desc, airCode, '', amount]);
+                }
+            });
+        });
+
+        if (isBank) {
+            aoa.push(['', '', '', '', 'รวมทั้งหมด', grandIn, grandOut]);
+        } else {
+            aoa.push(['', '', '', '', 'รวมทั้งหมด', grandSum]);
+        }
+    } else {
+        // ===== Detail view: รายการละเอียดทั้งหมด (Income & Expense) =====
+        if (isBank) {
+            colCount = 9;
+            aoa.push(['#', 'วันที่', 'คำอธิบาย', 'Type', 'Category', 'Status', 'Air Code', 'Cash In (฿)', 'Cash Out (฿)']);
+        } else {
+            colCount = 9;
+            aoa.push(['#', 'วันที่', 'คำอธิบาย', 'เจ้าหนี้ / ลูกหนี้', 'Bank', 'Category', 'Status', 'Air Code', 'จำนวนเงิน (฿)']);
+        }
+
+        let total = 0;
+        let totalIn = 0, totalOut = 0;
+
+        rows.forEach((row, i) => {
+            const rawDate = row['Date'] || row.date || '';
+            let displayDate = rawDate;
+            try {
+                const d = parseDateSafe(rawDate);
+                if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            } catch (e) { }
+
+            const desc = row['Description'] || row.description || '-';
+            const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '-').trim();
+
+            if (isBank) {
+                const rType = row['Type'] || row.type || '-';
+                const category = row['Category'] || row.category || '-';
+                const status = row['Status'] || row.status || '-';
+                const cIn = Number(row['Cash In'] || row.cashIn) || 0;
+                const cOut = Number(row['Cash Out'] || row.cashOut) || 0;
+                totalIn += cIn; totalOut += cOut;
+                aoa.push([i + 1, displayDate, desc, rType, category, status, airCode, cIn, cOut]);
+            } else {
+                const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
+                const bank = row['Bank'] || row.bank || '-';
+                const category = row['Category'] || row.category || '-';
+                const status = row['Status'] || row.status || '-';
+                const numAmt = getRowAmount(row, _modalType);
+                total += numAmt;
+                aoa.push([i + 1, displayDate, desc, creditor, bank, category, status, airCode, numAmt]);
+            }
+        });
+
+        if (isBank) {
+            aoa.push(['', '', '', '', '', '', 'รวมทั้งหมด', totalIn, totalOut]);
+        } else {
+            aoa.push(['', '', '', '', '', '', '', 'รวมทั้งหมด', total]);
+        }
+    }
+
+    // ===== สร้างไฟล์ Excel ด้วย SheetJS =====
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // รวมเซลล์หัวกระดาษ (บริษัท / ชื่อรายงาน / วันที่) ให้กว้างเท่าตาราง
+    ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: colCount - 1 } }
+    ];
+
+    // ความกว้างคอลัมน์แบบอัตโนมัติคร่าวๆ ตามเนื้อหา
+    const colWidths = [];
+    for (let c = 0; c < colCount; c++) {
+        let maxLen = 8;
+        aoa.forEach(r => {
+            const val = r[c];
+            if (val !== undefined && val !== null) {
+                const len = val.toString().length;
+                if (len > maxLen) maxLen = len;
+            }
+        });
+        colWidths.push({ wch: Math.min(maxLen + 2, 45) });
+    }
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    const sheetName = (title || 'Report').replace(/[\\/*?:\[\]]/g, '').substring(0, 31) || 'Report';
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+    const now = new Date();
+    const dateStamp = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
+    const safeTitle = (title || 'Report').replace(/[\\/:*?"<>|]/g, '_').trim();
+    const filename = 'Thaidrill_' + safeTitle + '_' + dateStamp + '.xlsx';
+
+    XLSX.writeFile(wb, filename);
 }
 
 
@@ -3061,181 +3167,24 @@ function _showBankBackButton(bankName) {
 
 function filterModalTable() {
     const q = (document.getElementById('modal-search')?.value || '').toLowerCase();
-    let filtered = _modalRows;
-
-    // Apply calendar date filter first (if any dates are ticked in the calendar popover)
-    if (_modalCalendarSelectedDates.size > 0) {
-        filtered = filtered.filter(row => {
-            const d = parseDateSafe(row['Date'] || row.date);
-            if (!d || isNaN(d)) return false;
-            return _modalCalendarSelectedDates.has(dateKey(d));
-        });
+    if (!q) {
+        renderModalRows(_modalRows);
+        return;
     }
-
-    if (q) {
-        filtered = filtered.filter(row => {
-            const fields = [
-                row['Description'], row.description,
-                row['Customer'], row.customer,
-                row['Vendor'], row.vendor,
-                row['Party'], row.party,
-                row['Name'], row.name,
-                row['Bank'], row.bank,
-                row['Category'], row.category,
-                row['Status'], row.status,
-            ].map(v => (v || '').toString().toLowerCase());
-            return fields.some(f => f.includes(q));
-        });
-    }
-
-    renderModalRows(filtered);
-}
-
-// -------------------------------------------------
-// CALENDAR DATE FILTER (Income/Expense detail modal)
-// -------------------------------------------------
-function dateKey(d) {
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-// Map of 'YYYY-MM-DD' -> { income: bool, expense: bool }, built from the broader filtered
-// transaction set so the calendar shows income/expense dots regardless of which single-type
-// modal (income or expense) is currently open.
-function buildModalCalendarDateMap() {
-    const map = {};
-    const source = typeof _lastFilteredTransactions !== 'undefined' && _lastFilteredTransactions ? _lastFilteredTransactions : [];
-    source.forEach(row => {
-        const d = parseDateSafe(row['Date'] || row.date);
-        if (!d || isNaN(d)) return;
-        const key = dateKey(d);
-        const type = getRowType(row);
-        if (!map[key]) map[key] = { income: false, expense: false };
-        if (type === 'income') map[key].income = true;
-        else if (type === 'expense') map[key].expense = true;
+    const filtered = _modalRows.filter(row => {
+        const fields = [
+            row['Description'], row.description,
+            row['Customer'], row.customer,
+            row['Vendor'], row.vendor,
+            row['Party'], row.party,
+            row['Name'], row.name,
+            row['Bank'], row.bank,
+            row['Category'], row.category,
+            row['Status'], row.status,
+        ].map(v => (v || '').toString().toLowerCase());
+        return fields.some(f => f.includes(q));
     });
-    return map;
-}
-
-function toggleModalCalendarPopover(e) {
-    if (e) e.stopPropagation();
-    const pop = document.getElementById('modal-calendar-popover');
-    if (!pop) return;
-    const isOpen = pop.style.display !== 'none';
-    if (isOpen) {
-        closeModalCalendarPopover();
-    } else {
-        // Default the visible month to the month of the most recent row, if we don't have one yet
-        if (!window._modalCalendarUserNavigated) {
-            const withDates = _modalRows.map(r => parseDateSafe(r['Date'] || r.date)).filter(d => d && !isNaN(d));
-            if (withDates.length > 0) {
-                const latest = new Date(Math.max.apply(null, withDates.map(d => d.getTime())));
-                _modalCalendarViewMonth = new Date(latest.getFullYear(), latest.getMonth(), 1);
-            }
-        }
-        pop.style.display = 'block';
-        renderModalCalendarPopover();
-        document.addEventListener('click', _modalCalendarOutsideClickHandler);
-    }
-}
-
-function closeModalCalendarPopover() {
-    const pop = document.getElementById('modal-calendar-popover');
-    if (pop) pop.style.display = 'none';
-    document.removeEventListener('click', _modalCalendarOutsideClickHandler);
-}
-
-function _modalCalendarOutsideClickHandler(e) {
-    const wrap = document.querySelector('.modal-calendar-wrap');
-    if (wrap && !wrap.contains(e.target)) closeModalCalendarPopover();
-}
-
-function navModalCalendarMonth(delta) {
-    window._modalCalendarUserNavigated = true;
-    _modalCalendarViewMonth = new Date(_modalCalendarViewMonth.getFullYear(), _modalCalendarViewMonth.getMonth() + delta, 1);
-    renderModalCalendarPopover();
-}
-
-function toggleModalCalendarDay(key) {
-    if (_modalCalendarSelectedDates.has(key)) {
-        _modalCalendarSelectedDates.delete(key);
-    } else {
-        _modalCalendarSelectedDates.add(key);
-    }
-    renderModalCalendarPopover();
-    updateModalCalendarButtonState();
-    filterModalTable();
-}
-
-function clearModalCalendarSelection() {
-    _modalCalendarSelectedDates = new Set();
-    renderModalCalendarPopover();
-    updateModalCalendarButtonState();
-    filterModalTable();
-}
-
-function updateModalCalendarButtonState() {
-    const btn = document.getElementById('btn-modal-calendar');
-    const badge = document.getElementById('modal-calendar-count');
-    if (!btn || !badge) return;
-    const count = _modalCalendarSelectedDates.size;
-    if (count > 0) {
-        btn.classList.add('has-selection');
-        badge.style.display = 'inline-flex';
-        badge.textContent = count;
-    } else {
-        btn.classList.remove('has-selection');
-        badge.style.display = 'none';
-        badge.textContent = '';
-    }
-}
-
-const THAI_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-
-function renderModalCalendarPopover() {
-    const pop = document.getElementById('modal-calendar-popover');
-    if (!pop) return;
-
-    const dateMap = buildModalCalendarDateMap();
-    const year = _modalCalendarViewMonth.getFullYear();
-    const month = _modalCalendarViewMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startWeekday = firstDay.getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    let cellsHtml = '';
-    for (let i = 0; i < startWeekday; i++) {
-        cellsHtml += `<div class="cal-day cal-empty"></div>`;
-    }
-    for (let day = 1; day <= daysInMonth; day++) {
-        const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const info = dateMap[key];
-        const isSelected = _modalCalendarSelectedDates.has(key);
-        let dotsHtml = '';
-        if (info && (info.income || info.expense)) {
-            dotsHtml = `<div class="cal-dots">${info.income ? '<span class="cal-dot income"></span>' : ''}${info.expense ? '<span class="cal-dot expense"></span>' : ''}</div>`;
-        }
-        cellsHtml += `<div class="cal-day${isSelected ? ' selected' : ''}" onclick="toggleModalCalendarDay('${key}')">${day}${dotsHtml}</div>`;
-    }
-
-    const selectedCount = _modalCalendarSelectedDates.size;
-
-    pop.innerHTML = `
-        <div class="cal-header">
-            <button type="button" class="cal-nav-btn" onclick="navModalCalendarMonth(-1)">&#8249;</button>
-            <span class="cal-title">${THAI_MONTHS[month]} ${year + 543}</span>
-            <button type="button" class="cal-nav-btn" onclick="navModalCalendarMonth(1)">&#8250;</button>
-        </div>
-        <div class="cal-weekdays">${THAI_WEEKDAYS.map(w => `<div class="cal-weekday">${w}</div>`).join('')}</div>
-        <div class="cal-grid">${cellsHtml}</div>
-        <div class="cal-footer">
-            <span class="cal-footer-text">${selectedCount > 0 ? `เลือกแล้ว ${selectedCount} วัน` : 'ยังไม่ได้เลือกวันที่'}</span>
-            <button type="button" class="cal-clear-btn" onclick="clearModalCalendarSelection()" ${selectedCount === 0 ? 'disabled style="opacity:.4; cursor:default;"' : ''}>ล้างที่เลือก</button>
-        </div>
-    `;
-
-    // Prevent clicks inside the popover from bubbling to the outside-click handler
-    pop.onclick = (e) => e.stopPropagation();
+    renderModalRows(filtered);
 }
 
 function closeDetailModal(event, force = false) {
@@ -3248,7 +3197,6 @@ function closeDetailModal(event, force = false) {
 // ESC key to close any open modal
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-        closeModalCalendarPopover();
         closeDetailModal(null, true);
         closeBankDetailModal(null, true);
     }
