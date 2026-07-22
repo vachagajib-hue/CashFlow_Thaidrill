@@ -1627,6 +1627,28 @@ select option:hover {
     transform: translateY(-1px);
 }
 
+.btn-export-excel {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.1));
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-export-excel:hover {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.2));
+    border-color: rgba(16, 185, 129, 0.6);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
 
 /* Modal Body */
 .modal-body {
@@ -1728,198 +1750,6 @@ select option:hover {
     padding: 12px 16px;
     color: #e2e8f0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-}
-
-/* Row-select checkboxes for PDF export */
-#modal-table th.modal-checkbox-col,
-#modal-table td.modal-checkbox-col {
-    padding-left: 14px;
-    padding-right: 4px;
-    width: 32px;
-}
-
-#modal-table .modal-row-checkbox,
-#modal-table #modal-select-all-cb {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: #38bdf8;
-    vertical-align: middle;
-}
-
-/* Calendar filter (Income/Expense detail modal) */
-.modal-calendar-wrap {
-    position: relative;
-}
-
-.btn-calendar-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(10, 14, 23, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-}
-
-.btn-calendar-toggle.active,
-.btn-calendar-toggle.has-selection {
-    background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(56, 189, 248, 0.1));
-    color: var(--primary);
-    border-color: rgba(56, 189, 248, 0.4);
-}
-
-.cal-count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 9px;
-    background: #38bdf8;
-    color: #0f172a;
-    font-size: 11px;
-    font-weight: 800;
-}
-
-.modal-calendar-popover {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    z-index: 50;
-    width: 300px;
-    background: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 14px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-    padding: 14px;
-}
-
-.cal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-}
-
-.cal-header .cal-title {
-    font-weight: 700;
-    font-size: 13.5px;
-    color: #e2e8f0;
-}
-
-.cal-nav-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #e2e8f0;
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-}
-
-.cal-nav-btn:hover {
-    background: rgba(56, 189, 248, 0.2);
-    border-color: rgba(56, 189, 248, 0.4);
-    color: #38bdf8;
-}
-
-.cal-weekdays,
-.cal-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 3px;
-}
-
-.cal-weekdays {
-    margin-bottom: 4px;
-}
-
-.cal-weekday {
-    text-align: center;
-    font-size: 10.5px;
-    color: var(--text-muted, #94a3b8);
-    font-weight: 700;
-    padding: 2px 0;
-}
-
-.cal-day {
-    position: relative;
-    text-align: center;
-    padding: 6px 0 8px;
-    border-radius: 8px;
-    font-size: 12px;
-    color: #e2e8f0;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid transparent;
-}
-
-.cal-day.cal-empty {
-    cursor: default;
-    background: transparent;
-}
-
-.cal-day:not(.cal-empty):hover {
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.cal-day.selected {
-    background: rgba(56, 189, 248, 0.25);
-    border-color: rgba(56, 189, 248, 0.6);
-    color: #38bdf8;
-    font-weight: 700;
-}
-
-.cal-dots {
-    position: absolute;
-    bottom: 2px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 2px;
-}
-
-.cal-dot {
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-}
-
-.cal-dot.income { background: #22c55e; }
-.cal-dot.expense { background: #ef4444; }
-
-.cal-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.cal-footer-text {
-    font-size: 11.5px;
-    color: var(--text-muted, #94a3b8);
-}
-
-.cal-clear-btn {
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #f87171;
-    font-size: 11.5px;
-    font-weight: 600;
-    padding: 5px 10px;
-    border-radius: 7px;
-    cursor: pointer;
-}
-
-.cal-clear-btn:hover {
-    background: rgba(239, 68, 68, 0.2);
 }
 
 .numeric {
@@ -2325,6 +2155,7 @@ body.hide-balances .net-balance-amount {
 
     .btn-detail:active,
     .btn-export-pdf:active,
+    .btn-export-excel:active,
     .btn-toggle-balance:active,
     .btn-view:active {
         background: rgba(255, 255, 255, 0.15);
@@ -2402,7 +2233,8 @@ body.hide-balances .net-balance-amount {
     }
 
     .btn-view,
-    .btn-export-pdf {
+    .btn-export-pdf,
+    .btn-export-excel {
         flex: 1;
         text-align: center;
         justify-content: center;
@@ -3125,6 +2957,32 @@ H6I !5- glow @2F */
     color: #fff;
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(239, 68, 68, 0.2);
+}
+
+/* 3b. Excel Button */
+.btn-export-excel {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.08));
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #6ee7b7;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.btn-export-excel:hover {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(5, 150, 105, 0.18));
+    border-color: rgba(16, 185, 129, 0.6);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.2);
 }
 
 /* 4. Close Button */
@@ -4137,6 +3995,32 @@ body.hide-balances .sidebar-bank-total-badge span {
     color: #fff;
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(239, 68, 68, 0.2);
+}
+
+/* --- Excel Export Button --- */
+.btn-excel-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(5, 150, 105, 0.10) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #6ee7b7;
+    transition: all 0.2s ease;
+    letter-spacing: 0.2px;
+    font-family: inherit;
+}
+
+.btn-excel-export:hover {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(5, 150, 105, 0.2) 100%);
+    border-color: rgba(16, 185, 129, 0.6);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.2);
 }
 
 /* --- Close Button --- */
