@@ -5085,6 +5085,8 @@ function confirmExportPdf() {
     tr    { page-break-inside: avoid; page-break-after: auto; }
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
+    tr.total-row  { page-break-after: avoid; break-after: avoid; }
+    .pdf-summary  { page-break-before: avoid; break-before: avoid; page-break-inside: avoid; break-inside: avoid; }
 </style>
 </head>
 <body>${reportHTML}
