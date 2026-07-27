@@ -87,8 +87,8 @@ function getDashboardData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   // 1. ดึงข้อมูลจากชีตต่างๆ
-  const incomingSheet = ss.getSheetByName("Incoming_Plan");
-  const summarySheet = ss.getSheetByName("Cash_Flow_Summary"); // แก้ไข: ใช้แทน Payment_Plan
+  // แก้ไข: ใช้ชีต Cash_Flow_Summary เป็นแหล่งข้อมูลเดียว (เลิกใช้ Incoming_Plan/Payment_Plan แล้ว)
+  const summarySheet = ss.getSheetByName("Cash_Flow_Summary");
   const bankSheet = ss.getSheetByName("Bank_Balance") || ss.getSheetByName("Bank Balance") || ss.getSheetByName("Bank_Balances") || ss.getSheetByName("BankBalances");
   
   const results = {
@@ -100,28 +100,16 @@ function getDashboardData() {
     dateG1: "-"
   };
 
-  // 2. ดึงข้อมูล Incoming (Received) - เหมือนเดิม
-  if (incomingSheet) {
-    const data = incomingSheet.getDataRange().getValues();
-    const headers = data[0];
-    for (let i = 1; i < data.length; i++) {
-      let row = {};
-      headers.forEach((h, idx) => row[h] = data[i][idx]);
-      results.transactions.push(row);
-    }
-  }
-
-  // 3. ดึงข้อมูลรายการค้างจ่าย/ค้างรับ (Plan/Actual) จากชีต Cash_Flow_Summary
-  // แก้ไข: เดิมดึงจากชีต Payment_Plan ซึ่งไม่ตรงกับโครงสร้างปัจจุบันแล้ว
-  // ใช้คอลัมน์ A-G ตามที่ยืนยันจากชีตจริง + คอลัมน์ H (Status) เพื่อให้ปฏิทิน/รายงาน PDF
-  // แยกป้าย ACTUAL/PLAN และตี dot วันที่ได้ถูกต้องตามจริงในชีต:
+  // 2. ดึงข้อมูลทั้งหมดจากชีต Cash_Flow_Summary ชีตเดียว แล้วแยกเป็น transactions (Actual) / plans (Plan)
+  // ตามคอลัมน์ H (Status) ใช้คอลัมน์ A-H ตามที่ยืนยันจากชีตจริง:
   //   A=วันที่, B=Customer/Vendor, C=Description, D=Air Code, E=Incoming, F=Payment, G=Balance, H=Status
-  // แมปชื่อคีย์ให้ตรงกับที่ frontend (script.js) ต้องการ โดยไม่พึ่งชื่อหัวคอลัมน์จริงในชีต (เช่น "วันที่")
+  // แมปชื่อคีย์เป็นภาษาอังกฤษตรงตามที่ frontend (script.js) ต้องการเสมอ
+  // (ห้ามใช้หัวคอลัมน์จริงในชีตตรงๆ เช่น "วันที่" เพราะทำให้ frontend หา row['Date'] ไม่เจอ)
   if (summarySheet) {
     const data = summarySheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue; // ข้ามแถวว่าง (ไม่มีวันที่)
-      let row = {
+      const row = {
         'Date': data[i][0],              // A
         'Customer/Vendor': data[i][1],   // B
         'Description': data[i][2],       // C
@@ -131,7 +119,13 @@ function getDashboardData() {
         'Balance': data[i][6],           // G
         'Status': data[i][7] || 'Plan'   // H (ถ้าไม่มีค่า ให้ default เป็น Plan)
       };
-      results.plans.push(row);
+
+      const statusVal = (row['Status'] || '').toString().trim().toLowerCase();
+      if (statusVal.indexOf('plan') !== -1) {
+        results.plans.push(row);        // รายการค้างจ่าย/ค้างรับ (ยังไม่เกิดขึ้นจริง)
+      } else {
+        results.transactions.push(row); // รายการที่เกิดขึ้นจริงแล้ว (Actual)
+      }
     }
   }
 
