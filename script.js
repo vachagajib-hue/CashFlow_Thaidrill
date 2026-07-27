@@ -178,6 +178,7 @@ let totalExpensePlan = 0;
 
 let allTransactions = []; // All Transactions (Actual)
 let allPlans = [];        // All Plans
+let allSummaryActuals = []; // Actual rows from Cash_Flow_Summary only (e.g. "ยอดยกมา") — used by Daily PDF Report
 let _lastFilteredTransactions = [];
 let _lastFilteredPlans = [];
 let allParties = [];      // All party names from All_Party sheet
@@ -372,6 +373,7 @@ function processData(dataStatus) {
     const isValidRow = row => Object.values(row).some(v => v !== null && v !== undefined && v.toString().trim() !== '');
     allTransactions = (dataStatus.transactions || []).map(sanitizeRow).filter(isValidRow);
     allPlans = (dataStatus.plans || []).map(sanitizeRow).filter(isValidRow);
+    allSummaryActuals = (dataStatus.summaryActuals || []).map(sanitizeRow).filter(isValidRow);
 
     allTransactions.sort(sortByDateAsc);
     allPlans.sort(sortByDateAsc);
@@ -4636,7 +4638,9 @@ function exportDailyPdf() {
     // แก้ไข: เดิมใช้ allPlans แทนที่ allTransactions ทั้งหมดถ้า allPlans ไม่ว่าง (แม้ allPlans จะไม่มีรายการของวันนั้นเลย)
     // ทำให้ระบบแจ้ง "ไม่พบรายการข้อมูล" ทั้งที่มีรายการจริงอยู่ใน allTransactions
     // แก้เป็นรวมข้อมูลจากทั้งสองแหล่ง (allTransactions + allPlans) แล้วตัดรายการซ้ำออก
-    const combinedSource = [...(allTransactions || []), ...(allPlans || [])];
+    // Daily PDF Report ดูเฉพาะจากชีต Cash_Flow_Summary (allSummaryActuals + allPlans) เท่านั้น
+    // (ไม่เอา allTransactions จากชีต Transactions เข้ามาปน — การ์ดแดชบอร์ดยังใช้ allTransactions เหมือนเดิม)
+    const combinedSource = [...(allSummaryActuals || []), ...(allPlans || [])];
     const seenRowKeys = new Set();
     const sourceData = combinedSource.filter(row => {
         const key = JSON.stringify(row);
