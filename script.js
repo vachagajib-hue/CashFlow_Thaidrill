@@ -4603,6 +4603,213 @@ function closeExportDateModal(event, force = false) {
     }
 }
 
+// ===== Daily PDF Report: view-toggle helpers (all / category / name) =====
+
+function pdfReportExtractRow(row, i) {
+    const rawDate = row['Date'] || row.date || '';
+    const dateObj = parseDateSafe(rawDate);
+    const dateDisplay = dateObj ? `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()+543}` : (rawDate || '-');
+    const desc = row['Description'] || row.description || '-';
+    const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
+    const aircodeRaw = row['Air Code'] || row['Aircode'] || row.aircode || '-';
+    const aircodeList = String(aircodeRaw).split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    let aircode = aircodeRaw;
+    if (aircodeList.length > 1) {
+        const half = Math.ceil(aircodeList.length / 2);
+        const line1 = aircodeList.slice(0, half).join(', ');
+        const line2 = aircodeList.slice(half).join(', ');
+        aircode = `${line1}<br>${line2}`;
+    }
+    const category = row['Category'] || row.category || '-';
+    const status = row['Status'] || row.status || 'Actual';
+    const statusClass = status.toLowerCase().includes('plan') ? 'status-plan' : 'status-actual';
+    const cIn = parseFloat(row['Incoming'] || row['Cash In']) || 0;
+    const cOut = parseFloat(row['Payment'] || row['Cash Out']) || 0;
+    const bal = parseFloat(row['Balance']) || 0;
+    return { i, dateDisplay, desc, creditor, aircode, category, status, statusClass, cIn, cOut, bal };
+}
+
+function buildPdfReportSummaryHTML(totalIn, totalOut, net) {
+    return `
+        <div class="pdf-summary-box income">
+            <div class="pdf-summary-label">รับเข้ารวม</div>
+            <div class="pdf-summary-value">${checkValue(totalIn)}</div>
+        </div>
+        <div class="pdf-summary-box expense">
+            <div class="pdf-summary-label">จ่ายออกรวม</div>
+            <div class="pdf-summary-value">${checkValue(totalOut)}</div>
+        </div>
+        <div class="pdf-summary-box net">
+            <div class="pdf-summary-label">คงเหลือ (แถวสุดท้าย)</div>
+            <div class="pdf-summary-value ${net < 0 ? 'expense-text' : ''}">${checkValue(net)}</div>
+        </div>
+    `;
+}
+
+function buildPdfReportFlatHTML(rows) {
+    let totalIn = 0, totalOut = 0, lastBalance = 0;
+    const bodyRows = rows.map((row, i) => {
+        const r = pdfReportExtractRow(row, i);
+        totalIn += r.cIn;
+        totalOut += r.cOut;
+        if (r.bal !== 0) lastBalance = r.bal;
+        return `
+            <tr>
+                <td style="text-align:center;">${r.i + 1}</td>
+                <td style="text-align:center; white-space: nowrap;">${r.dateDisplay}</td>
+                <td>${r.creditor}</td>
+                <td>${r.desc}</td>
+                <td style="text-align:center;">${r.aircode}</td>
+                <td>${r.category}</td>
+                <td style="text-align:center;"><span class="status-badge ${r.statusClass}">${r.status}</span></td>
+                <td class="numeric ${r.cIn > 0 ? 'income-text' : ''}">${r.cIn > 0 ? checkValue(r.cIn) : '-'}</td>
+                <td class="numeric ${r.cOut > 0 ? 'expense-text' : ''}">${r.cOut > 0 ? checkValue(r.cOut) : '-'}</td>
+                <td class="numeric ${r.bal < 0 ? 'expense-text' : ''}">${r.bal !== 0 ? checkValue(r.bal) : '-'}</td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th style="width: 3%;">#</th>
+                    <th style="width: 11%; white-space: nowrap;">วันที่</th>
+                    <th style="width: 14%;">เจ้าหนี้/ลูกหนี้</th>
+                    <th style="width: 17%;">คำอธิบาย</th>
+                    <th style="width: 7%;">Air Code</th>
+                    <th style="width: 9%;">Category</th>
+                    <th style="width: 6%;">Status</th>
+                    <th class="numeric" style="width: 11%;">รับเข้า (฿)</th>
+                    <th class="numeric" style="width: 11%;">จ่ายออก (฿)</th>
+                    <th class="numeric" style="width: 11%;">คงเหลือ (฿)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${bodyRows}
+                <tr class="total-row">
+                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดประจำวัน</td>
+                    <td class="numeric income-text">${checkValue(totalIn)}</td>
+                    <td class="numeric expense-text">${checkValue(totalOut)}</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="pdf-summary">
+            ${buildPdfReportSummaryHTML(totalIn, totalOut, lastBalance)}
+        </div>
+    `;
+}
+
+function buildPdfReportGroupedHTML(rows, groupBy) {
+    const groupLabel = groupBy === 'name' ? 'เจ้าหนี้/ลูกหนี้' : 'Category';
+    const groups = [];
+    const groupIndex = {};
+    let totalIn = 0, totalOut = 0, lastBalance = 0;
+
+    rows.forEach((row, i) => {
+        const r = pdfReportExtractRow(row, i);
+        totalIn += r.cIn;
+        totalOut += r.cOut;
+        if (r.bal !== 0) lastBalance = r.bal;
+        const key = groupBy === 'name' ? r.creditor : r.category;
+        if (!(key in groupIndex)) {
+            groupIndex[key] = groups.length;
+            groups.push({ key, rows: [], subIn: 0, subOut: 0 });
+        }
+        const g = groups[groupIndex[key]];
+        g.rows.push(r);
+        g.subIn += r.cIn;
+        g.subOut += r.cOut;
+    });
+
+    const bodyRows = groups.map((g, gIdx) => {
+        const detailRows = g.rows.map(r => `
+            <tr class="pdfrpt-detail-${gIdx}" style="display:none; background:#f8fafc;">
+                <td style="text-align:center;">${r.i + 1}</td>
+                <td style="text-align:center; white-space: nowrap;">${r.dateDisplay}</td>
+                <td>${r.creditor}</td>
+                <td>${r.desc}</td>
+                <td style="text-align:center;">${r.aircode}</td>
+                <td>${r.category}</td>
+                <td style="text-align:center;"><span class="status-badge ${r.statusClass}">${r.status}</span></td>
+                <td class="numeric ${r.cIn > 0 ? 'income-text' : ''}">${r.cIn > 0 ? checkValue(r.cIn) : '-'}</td>
+                <td class="numeric ${r.cOut > 0 ? 'expense-text' : ''}">${r.cOut > 0 ? checkValue(r.cOut) : '-'}</td>
+                <td class="numeric ${r.bal < 0 ? 'expense-text' : ''}">${r.bal !== 0 ? checkValue(r.bal) : '-'}</td>
+            </tr>
+        `).join('');
+
+        const groupRow = `
+            <tr class="pdfrpt-group-row" style="background:#eef2ff; font-weight:600;">
+                <td colspan="6">
+                    <span class="pdfrpt-expand no-print" onclick="toggleReportGroupExpand(${gIdx})" id="pdfrpt-expand-${gIdx}">+</span>
+                    ${groupLabel}: ${g.key} <span style="font-weight:400; color:#64748b;">(${g.rows.length} รายการ)</span>
+                </td>
+                <td></td>
+                <td class="numeric income-text">${checkValue(g.subIn)}</td>
+                <td class="numeric expense-text">${checkValue(g.subOut)}</td>
+                <td></td>
+            </tr>
+        `;
+        return groupRow + detailRows;
+    }).join('');
+
+    return `
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th style="width: 3%;">#</th>
+                    <th style="width: 11%; white-space: nowrap;">วันที่</th>
+                    <th style="width: 14%;">เจ้าหนี้/ลูกหนี้</th>
+                    <th style="width: 17%;">คำอธิบาย</th>
+                    <th style="width: 7%;">Air Code</th>
+                    <th style="width: 9%;">Category</th>
+                    <th style="width: 6%;">Status</th>
+                    <th class="numeric" style="width: 11%;">รับเข้า (฿)</th>
+                    <th class="numeric" style="width: 11%;">จ่ายออก (฿)</th>
+                    <th class="numeric" style="width: 11%;">คงเหลือ (฿)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${bodyRows}
+                <tr class="total-row">
+                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดประจำวัน</td>
+                    <td class="numeric income-text">${checkValue(totalIn)}</td>
+                    <td class="numeric expense-text">${checkValue(totalOut)}</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="pdf-summary">
+            ${buildPdfReportSummaryHTML(totalIn, totalOut, lastBalance)}
+        </div>
+    `;
+}
+
+function buildPdfReportBodyHTML(rows, mode) {
+    if (mode === 'category') return buildPdfReportGroupedHTML(rows, 'category');
+    if (mode === 'name') return buildPdfReportGroupedHTML(rows, 'name');
+    return buildPdfReportFlatHTML(rows);
+}
+
+function toggleReportGroupExpand(gIdx) {
+    const rowsEls = document.querySelectorAll('.pdfrpt-detail-' + gIdx);
+    const icon = document.getElementById('pdfrpt-expand-' + gIdx);
+    if (!rowsEls.length) return;
+    const nowHidden = rowsEls[0].style.display === 'none';
+    rowsEls.forEach(el => { el.style.display = nowHidden ? 'table-row' : 'none'; });
+    if (icon) icon.textContent = nowHidden ? '−' : '+';
+}
+
+function switchPdfReportView(mode) {
+    window._pdfReportMode = mode;
+    document.querySelectorAll('.pdf-view-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    const reportBody = document.getElementById('pdf-report-body');
+    if (reportBody) reportBody.innerHTML = buildPdfReportBodyHTML(window._pdfReportRows || [], mode);
+}
+
 function exportDailyPdf() {
     const monthSel = document.getElementById('export-month');
     const yearSel = document.getElementById('export-year');
@@ -4881,11 +5088,17 @@ function exportDailyPdf() {
         .pdf-summary-box.income .pdf-summary-value { color: #059669; }
         .pdf-summary-box.expense .pdf-summary-value { color: #dc2626; }
         .pdf-summary-box.net .pdf-summary-value { color: #1d4ed8; }
+        .pdf-summary-box.net .pdf-summary-value.expense-text { color: #dc2626 !important; }
+        .pdf-view-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
+        .pdf-view-btn { font-family: 'Sarabun', sans-serif; font-size: 11px; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f1f5f9; color: #475569; cursor: pointer; }
+        .pdf-view-btn.active { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
+        .pdfrpt-expand { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; background: #e2e8f0; color: #334155; font-size: 11px; font-weight: 700; cursor: pointer; margin-right: 6px; }
         @media print {
             .pdf-table th { background: #1d4ed8 !important; color: #ffffff !important; }
             .pdf-summary-box.income { background: #dcfce7 !important; }
             .pdf-summary-box.expense { background: #fee2e2 !important; }
             .pdf-summary-box.net { background: #eff6ff !important; }
+            .no-print { display: none !important; }
         }
     `;
     pdfContainer.appendChild(style);
@@ -4914,104 +5127,22 @@ function exportDailyPdf() {
     `;
     pdfContainer.appendChild(header);
 
-    const table = document.createElement('table');
-    table.className = 'pdf-table';
-    
-    table.innerHTML = `
-        <thead>
-            <tr>
-                <th style="width: 3%;">#</th>
-                <th style="width: 11%; white-space: nowrap;">วันที่</th>
-                <th style="width: 14%;">เจ้าหนี้/ลูกหนี้</th>
-                <th style="width: 17%;">คำอธิบาย</th>
-                <th style="width: 7%;">Air Code</th>
-                <th style="width: 9%;">Category</th>
-                <th style="width: 6%;">Status</th>
-                <th class="numeric" style="width: 11%;">รับเข้า (฿)</th>
-                <th class="numeric" style="width: 11%;">จ่ายออก (฿)</th>
-                <th class="numeric" style="width: 11%;">คงเหลือ (฿)</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
+    const viewToggleBar = document.createElement('div');
+    viewToggleBar.className = 'pdf-view-toggle no-print';
+    viewToggleBar.innerHTML = `
+        <button type="button" class="pdf-view-btn active" data-mode="all" onclick="switchPdfReportView('all')">รายการทั้งหมด</button>
+        <button type="button" class="pdf-view-btn" data-mode="category" onclick="switchPdfReportView('category')">จัดกลุ่มตาม Category</button>
+        <button type="button" class="pdf-view-btn" data-mode="name" onclick="switchPdfReportView('name')">สรุปตามเจ้าหนี้/ลูกหนี้</button>
     `;
-    
-    const tbody = table.querySelector('tbody');
-    let totalIn = 0;
-    let totalOut = 0;
-    let lastBalance = 0;
+    pdfContainer.appendChild(viewToggleBar);
 
-    filteredRows.forEach((row, i) => {
-        const rawDate = row['Date'] || row.date || '';
-        const dateObj = parseDateSafe(rawDate);
-        const dateDisplay = dateObj ? `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()+543}` : (rawDate || '-');
-        const desc = row['Description'] || row.description || '-';
-        const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
-        const aircodeRaw = row['Air Code'] || row['Aircode'] || row.aircode || '-';
-        const aircodeList = String(aircodeRaw).split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
-        let aircode = aircodeRaw;
-        if (aircodeList.length > 1) {
-            const half = Math.ceil(aircodeList.length / 2);
-            const line1 = aircodeList.slice(0, half).join(', ');
-            const line2 = aircodeList.slice(half).join(', ');
-            aircode = `${line1}<br>${line2}`;
-        }
-        const category = row['Category'] || row.category || '-';
-        const status = row['Status'] || row.status || 'Actual';
-        const statusClass = status.toLowerCase().includes('plan') ? 'status-plan' : 'status-actual';
+    const reportBody = document.createElement('div');
+    reportBody.id = 'pdf-report-body';
+    pdfContainer.appendChild(reportBody);
 
-        const cIn = parseFloat(row['Incoming'] || row['Cash In']) || 0;
-        const cOut = parseFloat(row['Payment'] || row['Cash Out']) || 0;
-        const bal = parseFloat(row['Balance']) || 0;
-
-        totalIn += cIn;
-        totalOut += cOut;
-        if (bal !== 0) lastBalance = bal;
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="text-align:center;">${i + 1}</td>
-            <td style="text-align:center; white-space: nowrap;">${dateDisplay}</td>
-            <td>${creditor}</td>
-            <td>${desc}</td>
-            <td style="text-align:center;">${aircode}</td>
-            <td>${category}</td>
-            <td style="text-align:center;"><span class="status-badge ${statusClass}">${status}</span></td>
-            <td class="numeric ${cIn > 0 ? 'income-text' : ''}">${cIn > 0 ? checkValue(cIn) : '-'}</td>
-            <td class="numeric ${cOut > 0 ? 'expense-text' : ''}">${cOut > 0 ? checkValue(cOut) : '-'}</td>
-            <td class="numeric">${bal !== 0 ? checkValue(bal) : '-'}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    const totalTr = document.createElement('tr');
-    totalTr.className = 'total-row';
-    totalTr.innerHTML = `
-        <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดประจำวัน</td>
-        <td class="numeric income-text">${checkValue(totalIn)}</td>
-        <td class="numeric expense-text">${checkValue(totalOut)}</td>
-        <td></td>
-    `;
-    tbody.appendChild(totalTr);
-    pdfContainer.appendChild(table);
-
-    const net = lastBalance;
-    const summary = document.createElement('div');
-    summary.className = 'pdf-summary';
-    summary.innerHTML = `
-        <div class="pdf-summary-box income">
-            <div class="pdf-summary-label">รับเข้ารวม</div>
-            <div class="pdf-summary-value">${checkValue(totalIn)}</div>
-        </div>
-        <div class="pdf-summary-box expense">
-            <div class="pdf-summary-label">จ่ายออกรวม</div>
-            <div class="pdf-summary-value">${checkValue(totalOut)}</div>
-        </div>
-        <div class="pdf-summary-box net">
-            <div class="pdf-summary-label">คงเหลือ (แถวสุดท้าย)</div>
-            <div class="pdf-summary-value">${checkValue(net)}</div>
-        </div>
-    `;
-    pdfContainer.appendChild(summary);
+    window._pdfReportRows = filteredRows;
+    window._pdfReportMode = 'all';
+    reportBody.innerHTML = buildPdfReportBodyHTML(filteredRows, 'all');
 
     // ===== SHOW PREVIEW =====
     // Store config for later use by confirmExportPdf
