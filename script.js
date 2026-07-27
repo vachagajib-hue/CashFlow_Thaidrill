@@ -4468,19 +4468,24 @@ function openDateExportModal() {
     }
 }
 
-// คำนวณวันที่ของเดือน/ปีปัจจุบัน ที่มีข้อมูลในระบบ (ใช้ตี dot)
+// คำนวณวันที่ของเดือน/ปีปัจจุบัน ที่มีข้อมูลในระบบ (ใช้ตี dot + เปิดให้กดเลือกได้)
+// รวมข้อมูลจากทั้ง allTransactions (รายการจริง) และ allPlans (แผนจ่าย/รับ) เข้าด้วยกัน
+// แก้ไข: เดิมใช้ allPlans แทนที่ allTransactions ทั้งหมดถ้า allPlans ไม่ว่าง (แม้ allPlans จะไม่มีรายการของเดือนนั้นเลย)
+// ทำให้ทุกวันในปฏิทินถูกล็อกกดไม่ได้ (.has-data ไม่ติด) เมื่อเดือนที่เลือกไม่มีแผนจ่าย ทั้งที่มีรายการจริงอยู่
 function cf2GetDatesWithData(year, month) {
     const set = new Set();
-    const sourceData = (typeof allPlans !== 'undefined' && allPlans && allPlans.length > 0)
-        ? allPlans
-        : (typeof allTransactions !== 'undefined' ? allTransactions : []);
-    if (!sourceData) return set;
-    sourceData.forEach(row => {
-        const d = parseDateSafe(row['Date'] || row.date);
-        if (!d) return;
-        if (d.getFullYear() === year && d.getMonth() + 1 === month) {
-            set.add(d.getDate());
-        }
+    const sources = [];
+    if (typeof allTransactions !== 'undefined' && allTransactions) sources.push(allTransactions);
+    if (typeof allPlans !== 'undefined' && allPlans) sources.push(allPlans);
+
+    sources.forEach(sourceData => {
+        sourceData.forEach(row => {
+            const d = parseDateSafe(row['Date'] || row.date);
+            if (!d) return;
+            if (d.getFullYear() === year && d.getMonth() + 1 === month) {
+                set.add(d.getDate());
+            }
+        });
     });
     return set;
 }
