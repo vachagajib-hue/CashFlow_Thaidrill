@@ -4627,8 +4627,17 @@ function exportDailyPdf() {
     // Close modal first so alerts are visible
     closeExportDateModal(null, true);
 
-    // Use allPlans (Cash_Flow_Summary). Fall back to allTransactions if allPlans is empty.
-    const sourceData = (allPlans && allPlans.length > 0) ? allPlans : allTransactions;
+    // แก้ไข: เดิมใช้ allPlans แทนที่ allTransactions ทั้งหมดถ้า allPlans ไม่ว่าง (แม้ allPlans จะไม่มีรายการของวันนั้นเลย)
+    // ทำให้ระบบแจ้ง "ไม่พบรายการข้อมูล" ทั้งที่มีรายการจริงอยู่ใน allTransactions
+    // แก้เป็นรวมข้อมูลจากทั้งสองแหล่ง (allTransactions + allPlans) แล้วตัดรายการซ้ำออก
+    const combinedSource = [...(allTransactions || []), ...(allPlans || [])];
+    const seenRowKeys = new Set();
+    const sourceData = combinedSource.filter(row => {
+        const key = JSON.stringify(row);
+        if (seenRowKeys.has(key)) return false;
+        seenRowKeys.add(key);
+        return true;
+    });
 
     const filteredRows = sourceData.filter(row => {
         const d = parseDateSafe(row['Date'] || row.date);
