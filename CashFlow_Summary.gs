@@ -88,7 +88,7 @@ function getDashboardData() {
   
   // 1. ดึงข้อมูลจากชีตต่างๆ
   const incomingSheet = ss.getSheetByName("Incoming_Plan");
-  const paymentSheet = ss.getSheetByName("Payment_Plan");
+  const summarySheet = ss.getSheetByName("Cash_Flow_Summary"); // แก้ไข: ใช้แทน Payment_Plan
   const bankSheet = ss.getSheetByName("Bank_Balance") || ss.getSheetByName("Bank Balance") || ss.getSheetByName("Bank_Balances") || ss.getSheetByName("BankBalances");
   
   const results = {
@@ -100,7 +100,7 @@ function getDashboardData() {
     dateG1: "-"
   };
 
-  // 2. ดึงข้อมูล Incoming (Received)
+  // 2. ดึงข้อมูล Incoming (Received) - เหมือนเดิม
   if (incomingSheet) {
     const data = incomingSheet.getDataRange().getValues();
     const headers = data[0];
@@ -111,13 +111,24 @@ function getDashboardData() {
     }
   }
 
-  // 3. ดึงข้อมูล Payment (Paid)
-  if (paymentSheet) {
-    const data = paymentSheet.getDataRange().getValues();
-    const headers = data[0];
+  // 3. ดึงข้อมูลรายการค้างจ่าย/ค้างรับ (Plan) จากชีต Cash_Flow_Summary
+  // แก้ไข: เดิมดึงจากชีต Payment_Plan ซึ่งไม่ตรงกับโครงสร้างปัจจุบันแล้ว
+  // ใช้เฉพาะคอลัมน์ A-G ตามที่ยืนยันจากชีตจริง:
+  //   A=วันที่, B=Customer/Vendor, C=Description, D=Air Code, E=Incoming, F=Payment, G=Balance
+  // แมปชื่อคีย์ให้ตรงกับที่ frontend (script.js) ต้องการ โดยไม่พึ่งชื่อหัวคอลัมน์จริงในชีต (เช่น "วันที่")
+  if (summarySheet) {
+    const data = summarySheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
-      let row = {};
-      headers.forEach((h, idx) => row[h] = data[i][idx]);
+      if (!data[i][0]) continue; // ข้ามแถวว่าง (ไม่มีวันที่)
+      let row = {
+        'Date': data[i][0],             // A
+        'Customer/Vendor': data[i][1],  // B
+        'Description': data[i][2],      // C
+        'Air Code': data[i][3],         // D
+        'Incoming': data[i][4],         // E
+        'Payment': data[i][5],          // F
+        'Balance': data[i][6]           // G
+      };
       results.plans.push(row);
     }
   }
