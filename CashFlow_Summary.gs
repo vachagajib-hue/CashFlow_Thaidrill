@@ -111,23 +111,25 @@ function getDashboardData() {
     }
   }
 
-  // 3. ดึงข้อมูลรายการค้างจ่าย/ค้างรับ (Plan) จากชีต Cash_Flow_Summary
+  // 3. ดึงข้อมูลรายการค้างจ่าย/ค้างรับ (Plan/Actual) จากชีต Cash_Flow_Summary
   // แก้ไข: เดิมดึงจากชีต Payment_Plan ซึ่งไม่ตรงกับโครงสร้างปัจจุบันแล้ว
-  // ใช้เฉพาะคอลัมน์ A-G ตามที่ยืนยันจากชีตจริง:
-  //   A=วันที่, B=Customer/Vendor, C=Description, D=Air Code, E=Incoming, F=Payment, G=Balance
+  // ใช้คอลัมน์ A-G ตามที่ยืนยันจากชีตจริง + คอลัมน์ H (Status) เพื่อให้ปฏิทิน/รายงาน PDF
+  // แยกป้าย ACTUAL/PLAN และตี dot วันที่ได้ถูกต้องตามจริงในชีต:
+  //   A=วันที่, B=Customer/Vendor, C=Description, D=Air Code, E=Incoming, F=Payment, G=Balance, H=Status
   // แมปชื่อคีย์ให้ตรงกับที่ frontend (script.js) ต้องการ โดยไม่พึ่งชื่อหัวคอลัมน์จริงในชีต (เช่น "วันที่")
   if (summarySheet) {
     const data = summarySheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (!data[i][0]) continue; // ข้ามแถวว่าง (ไม่มีวันที่)
       let row = {
-        'Date': data[i][0],             // A
-        'Customer/Vendor': data[i][1],  // B
-        'Description': data[i][2],      // C
-        'Air Code': data[i][3],         // D
-        'Incoming': data[i][4],         // E
-        'Payment': data[i][5],          // F
-        'Balance': data[i][6]           // G
+        'Date': data[i][0],              // A
+        'Customer/Vendor': data[i][1],   // B
+        'Description': data[i][2],       // C
+        'Air Code': data[i][3],          // D
+        'Incoming': data[i][4],          // E
+        'Payment': data[i][5],           // F
+        'Balance': data[i][6],           // G
+        'Status': data[i][7] || 'Plan'   // H (ถ้าไม่มีค่า ให้ default เป็น Plan)
       };
       results.plans.push(row);
     }
