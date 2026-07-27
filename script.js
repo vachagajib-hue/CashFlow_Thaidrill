@@ -4688,7 +4688,7 @@ function buildPdfReportFlatHTML(rows) {
             <tbody>
                 ${bodyRows}
                 <tr class="total-row">
-                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดประจำวัน</td>
+                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดสุทธิ</td>
                     <td class="numeric income-text">${checkValue(totalIn)}</td>
                     <td class="numeric expense-text">${checkValue(totalOut)}</td>
                     <td></td>
@@ -4772,7 +4772,7 @@ function buildPdfReportGroupedHTML(rows, groupBy) {
             <tbody>
                 ${bodyRows}
                 <tr class="total-row">
-                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดประจำวัน</td>
+                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดสุทธิ</td>
                     <td class="numeric income-text">${checkValue(totalIn)}</td>
                     <td class="numeric expense-text">${checkValue(totalOut)}</td>
                     <td></td>
@@ -5073,7 +5073,8 @@ function exportDailyPdf() {
         .numeric { text-align: right !important; white-space: nowrap; }
         .income-text { color: #059669; font-weight: 600; }
         .expense-text { color: #dc2626; font-weight: 600; }
-        .total-row { font-weight: 700; background: #f1f5f9; }
+        .total-row { font-weight: 700; background: #fdf3d8; font-size: 11px; }
+        .total-row td { border-top: 2px solid #b7791f; }
         .status-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
         .status-actual { background: #dcfce7; color: #166534; }
         .status-plan { background: #fef9c3; color: #854d0e; }
