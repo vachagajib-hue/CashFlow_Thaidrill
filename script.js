@@ -4740,13 +4740,13 @@ function buildPdfReportGroupedHTML(rows, groupBy) {
 
         const groupRow = `
             <tr class="pdfrpt-group-row" style="background:#eef2ff; font-weight:600;">
-                <td colspan="6" style="font-size:14px; padding:9px 12px; border-left:3px solid #1d4ed8;">
+                <td colspan="6" style="font-size:11px; padding:8px 12px; border-left:3px solid #1d4ed8;">
                     <span class="pdfrpt-expand no-print" onclick="toggleReportGroupExpand(${gIdx})" id="pdfrpt-expand-${gIdx}">+</span>
-                    ${g.key} <span style="font-size:11px; font-weight:400; color:#64748b;">(${g.rows.length} รายการ)</span>
+                    ${g.key} <span style="font-size:10px; font-weight:400; color:#64748b;">(${g.rows.length} รายการ)</span>
                 </td>
                 <td></td>
-                <td class="numeric income-text" style="font-size:14px; padding:9px 12px;">${checkValue(g.subIn)}</td>
-                <td class="numeric expense-text" style="font-size:14px; padding:9px 12px;">${checkValue(g.subOut)}</td>
+                <td class="numeric income-text" style="font-size:11px; padding:8px 12px;">${checkValue(g.subIn)}</td>
+                <td class="numeric expense-text" style="font-size:11px; padding:8px 12px;">${checkValue(g.subOut)}</td>
                 <td></td>
             </tr>
         `;
