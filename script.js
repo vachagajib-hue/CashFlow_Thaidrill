@@ -360,6 +360,12 @@ function processData(dataStatus) {
                 cleaned[cleanKey] = val;
             }
         }
+        // แก้ไข: ชีตบางแหล่ง (เช่น Cash_Flow_Summary) ส่งหัวคอลัมน์วันที่มาเป็นภาษาไทย "วันที่"
+        // แทนที่จะเป็น "Date" ทำให้ทุกจุดในโค้ดที่เช็ค row['Date'] || row.date หาไม่เจอ
+        // และวันที่ของรายการ Plan ไม่ถูกจับคู่กับปฏิทิน/รายงานเลย จึงเติม alias ให้ครอบคลุมไว้ตรงนี้จุดเดียว
+        if ((cleaned['Date'] === undefined || cleaned['Date'] === '' || cleaned['Date'] === null) && cleaned['วันที่'] !== undefined && cleaned['วันที่'] !== '') {
+            cleaned['Date'] = cleaned['วันที่'];
+        }
         return cleaned;
     };
 
