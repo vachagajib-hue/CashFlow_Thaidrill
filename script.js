@@ -4674,15 +4674,15 @@ function buildPdfReportFlatHTML(rows) {
             <thead>
                 <tr>
                     <th style="width: 3%;">#</th>
-                    <th style="width: 11%; white-space: nowrap;">วันที่</th>
-                    <th style="width: 14%;">เจ้าหนี้/ลูกหนี้</th>
-                    <th style="width: 17%;">คำอธิบาย</th>
-                    <th style="width: 7%;">Air Code</th>
-                    <th style="width: 9%;">Category</th>
-                    <th style="width: 6%;">Status</th>
-                    <th class="numeric" style="width: 11%;">รับเข้า (฿)</th>
-                    <th class="numeric" style="width: 11%;">จ่ายออก (฿)</th>
-                    <th class="numeric" style="width: 11%;">คงเหลือ (฿)</th>
+                    <th style="width: 9%; white-space: nowrap;">วันที่</th>
+                    <th style="width: 13%;">เจ้าหนี้/ลูกหนี้</th>
+                    <th style="width: 14%;">คำอธิบาย</th>
+                    <th style="width: 6%;">Air Code</th>
+                    <th style="width: 7%;">Category</th>
+                    <th style="width: 5%;">Status</th>
+                    <th class="numeric" style="width: 14%;">รับเข้า (฿)</th>
+                    <th class="numeric" style="width: 14%;">จ่ายออก (฿)</th>
+                    <th class="numeric" style="width: 15%;">คงเหลือ (฿)</th>
                 </tr>
             </thead>
             <tbody>
@@ -4740,13 +4740,13 @@ function buildPdfReportGroupedHTML(rows, groupBy) {
 
         const groupRow = `
             <tr class="pdfrpt-group-row" style="background:#eef2ff; font-weight:600;">
-                <td colspan="6" style="font-size:14px;">
+                <td colspan="6" style="font-size:14px; padding:9px 12px; border-left:3px solid #1d4ed8;">
                     <span class="pdfrpt-expand no-print" onclick="toggleReportGroupExpand(${gIdx})" id="pdfrpt-expand-${gIdx}">+</span>
                     ${g.key} <span style="font-size:11px; font-weight:400; color:#64748b;">(${g.rows.length} รายการ)</span>
                 </td>
                 <td></td>
-                <td class="numeric income-text" style="font-size:14px;">${checkValue(g.subIn)}</td>
-                <td class="numeric expense-text" style="font-size:14px;">${checkValue(g.subOut)}</td>
+                <td class="numeric income-text" style="font-size:14px; padding:9px 12px;">${checkValue(g.subIn)}</td>
+                <td class="numeric expense-text" style="font-size:14px; padding:9px 12px;">${checkValue(g.subOut)}</td>
                 <td></td>
             </tr>
         `;
@@ -4758,15 +4758,15 @@ function buildPdfReportGroupedHTML(rows, groupBy) {
             <thead>
                 <tr>
                     <th style="width: 3%;">#</th>
-                    <th style="width: 11%; white-space: nowrap;">วันที่</th>
-                    <th style="width: 14%;">เจ้าหนี้/ลูกหนี้</th>
-                    <th style="width: 17%;">คำอธิบาย</th>
-                    <th style="width: 7%;">Air Code</th>
-                    <th style="width: 9%;">Category</th>
-                    <th style="width: 6%;">Status</th>
-                    <th class="numeric" style="width: 11%;">รับเข้า (฿)</th>
-                    <th class="numeric" style="width: 11%;">จ่ายออก (฿)</th>
-                    <th class="numeric" style="width: 11%;">คงเหลือ (฿)</th>
+                    <th style="width: 9%; white-space: nowrap;">วันที่</th>
+                    <th style="width: 13%;">เจ้าหนี้/ลูกหนี้</th>
+                    <th style="width: 14%;">คำอธิบาย</th>
+                    <th style="width: 6%;">Air Code</th>
+                    <th style="width: 7%;">Category</th>
+                    <th style="width: 5%;">Status</th>
+                    <th class="numeric" style="width: 14%;">รับเข้า (฿)</th>
+                    <th class="numeric" style="width: 14%;">จ่ายออก (฿)</th>
+                    <th class="numeric" style="width: 15%;">คงเหลือ (฿)</th>
                 </tr>
             </thead>
             <tbody>
