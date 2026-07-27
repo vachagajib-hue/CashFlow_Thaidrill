@@ -4677,12 +4677,12 @@ function buildPdfReportFlatHTML(rows) {
                     <th style="width: 9%; white-space: nowrap;">วันที่</th>
                     <th style="width: 13%;">เจ้าหนี้/ลูกหนี้</th>
                     <th style="width: 14%;">คำอธิบาย</th>
-                    <th style="width: 6%;">Air Code</th>
-                    <th style="width: 7%;">Category</th>
-                    <th style="width: 5%;">Status</th>
-                    <th class="numeric" style="width: 14%;">รับเข้า (฿)</th>
-                    <th class="numeric" style="width: 14%;">จ่ายออก (฿)</th>
-                    <th class="numeric" style="width: 15%;">คงเหลือ (฿)</th>
+                    <th style="width: 7%; white-space: nowrap;">Air Code</th>
+                    <th style="width: 9%; white-space: nowrap;">Category</th>
+                    <th style="width: 6%; white-space: nowrap;">Status</th>
+                    <th class="numeric" style="width: 13%;">รับเข้า (฿)</th>
+                    <th class="numeric" style="width: 13%;">จ่ายออก (฿)</th>
+                    <th class="numeric" style="width: 13%;">คงเหลือ (฿)</th>
                 </tr>
             </thead>
             <tbody>
@@ -4761,12 +4761,12 @@ function buildPdfReportGroupedHTML(rows, groupBy) {
                     <th style="width: 9%; white-space: nowrap;">วันที่</th>
                     <th style="width: 13%;">เจ้าหนี้/ลูกหนี้</th>
                     <th style="width: 14%;">คำอธิบาย</th>
-                    <th style="width: 6%;">Air Code</th>
-                    <th style="width: 7%;">Category</th>
-                    <th style="width: 5%;">Status</th>
-                    <th class="numeric" style="width: 14%;">รับเข้า (฿)</th>
-                    <th class="numeric" style="width: 14%;">จ่ายออก (฿)</th>
-                    <th class="numeric" style="width: 15%;">คงเหลือ (฿)</th>
+                    <th style="width: 7%; white-space: nowrap;">Air Code</th>
+                    <th style="width: 9%; white-space: nowrap;">Category</th>
+                    <th style="width: 6%; white-space: nowrap;">Status</th>
+                    <th class="numeric" style="width: 13%;">รับเข้า (฿)</th>
+                    <th class="numeric" style="width: 13%;">จ่ายออก (฿)</th>
+                    <th class="numeric" style="width: 13%;">คงเหลือ (฿)</th>
                 </tr>
             </thead>
             <tbody>
