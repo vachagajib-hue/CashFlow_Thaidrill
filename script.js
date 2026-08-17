@@ -51,6 +51,19 @@ function parseDateSafe(dateVal) {
     return null;
 }
 
+// Sort a list of transaction-like rows by their Date field, ascending (earliest first).
+// Rows with an unparseable/missing date are pushed to the end.
+function sortRowsByDateAsc(arr) {
+    return arr.slice().sort((a, b) => {
+        const dA = parseDateSafe(a['Date'] || a.date);
+        const dB = parseDateSafe(b['Date'] || b.date);
+        if (!dA && !dB) return 0;
+        if (!dA) return 1;
+        if (!dB) return -1;
+        return dA - dB;
+    });
+}
+
 // Utility: Normalize Name
 // ใช้ชื่อตามชีต 100% — ไม่ตัดคำนำหน้า/คำต่อท้าย/สาขา ใด ๆ
 // ทำแค่ 2 อย่างเพื่อกันชื่อพิมพ์พลาด:
@@ -178,7 +191,6 @@ let totalExpensePlan = 0;
 
 let allTransactions = []; // All Transactions (Actual)
 let allPlans = [];        // All Plans
-let allSummaryActuals = []; // Actual rows from Cash_Flow_Summary only (e.g. "ยอดยกมา") — used by Daily PDF Report
 let _lastFilteredTransactions = [];
 let _lastFilteredPlans = [];
 let allParties = [];      // All party names from All_Party sheet
@@ -361,19 +373,12 @@ function processData(dataStatus) {
                 cleaned[cleanKey] = val;
             }
         }
-        // แก้ไข: ชีตบางแหล่ง (เช่น Cash_Flow_Summary) ส่งหัวคอลัมน์วันที่มาเป็นภาษาไทย "วันที่"
-        // แทนที่จะเป็น "Date" ทำให้ทุกจุดในโค้ดที่เช็ค row['Date'] || row.date หาไม่เจอ
-        // และวันที่ของรายการ Plan ไม่ถูกจับคู่กับปฏิทิน/รายงานเลย จึงเติม alias ให้ครอบคลุมไว้ตรงนี้จุดเดียว
-        if ((cleaned['Date'] === undefined || cleaned['Date'] === '' || cleaned['Date'] === null) && cleaned['วันที่'] !== undefined && cleaned['วันที่'] !== '') {
-            cleaned['Date'] = cleaned['วันที่'];
-        }
         return cleaned;
     };
 
     const isValidRow = row => Object.values(row).some(v => v !== null && v !== undefined && v.toString().trim() !== '');
     allTransactions = (dataStatus.transactions || []).map(sanitizeRow).filter(isValidRow);
     allPlans = (dataStatus.plans || []).map(sanitizeRow).filter(isValidRow);
-    allSummaryActuals = (dataStatus.summaryActuals || []).map(sanitizeRow).filter(isValidRow);
 
     allTransactions.sort(sortByDateAsc);
     allPlans.sort(sortByDateAsc);
@@ -1799,7 +1804,7 @@ function openBankDetailModal(bankFullName, bankType, accountNum) {
     const bankTypeUpper = bankType.toUpperCase();
     const acctLast4 = last4digits(accountNum);
 
-    const rows = allTransactions.filter(row => {
+    let rows = allTransactions.filter(row => {
         const b = (row['Bank'] || row.bank || '').trim();
 
         // ① Exact match
@@ -1831,6 +1836,8 @@ function openBankDetailModal(bankFullName, bankType, accountNum) {
         }
         return true;
     });
+
+    rows = sortRowsByDateAsc(rows);
 
     _bankModalRows = rows;
 
@@ -2109,6 +2116,13 @@ let _modalType = '';  // 'income' | 'expense' | 'balance'
 let _modalTab = 'list'; // 'list' | 'bank'
 let _isModalBankSource = false;
 
+// Selected rows (by object reference) for checkbox-based PDF export in the detail modal list view
+let _modalSelectedRows = new Set();
+
+// Calendar date filter (detail modal): selected dates use 'YYYY-MM-DD' keys (Gregorian)
+let _modalCalendarSelectedDates = new Set();
+let _modalCalendarViewMonth = new Date(); // month currently shown in the calendar popover
+
 const MODAL_LABELS = {
     'income-actual': { title: '📥 Income (Actual)', color: 'income' },
     'income-plan': { title: '📋 Income (Plan)', color: 'income' },
@@ -2158,7 +2172,15 @@ function openDetailModal(cardId) {
         rows = [...bankBalances];
     }
 
+    if (cardId !== 'selected-balance') {
+        rows = sortRowsByDateAsc(rows);
+    }
+
     _modalRows = rows;
+    _modalSelectedRows = new Set();
+    _modalCalendarSelectedDates = new Set();
+    _modalCalendarViewMonth = new Date();
+    closeModalCalendarPopover();
 
     // Set header info
     const titleEl = document.getElementById('modal-title');
@@ -2170,13 +2192,17 @@ function openDetailModal(cardId) {
     // Show/hide menu based on modal source
     const modalTabs = document.querySelector('.modal-tabs');
     const modalViewToggle = document.querySelector('.modal-view-toggle');
+    const modalCalendarWrap = document.querySelector('.modal-calendar-wrap');
     if (_isModalBankSource) {
         if (modalTabs) modalTabs.style.display = 'none';
         if (modalViewToggle) modalViewToggle.style.display = 'none';
+        if (modalCalendarWrap) modalCalendarWrap.style.display = 'none';
     } else {
         if (modalTabs) modalTabs.style.display = '';
         if (modalViewToggle) modalViewToggle.style.display = '';
+        if (modalCalendarWrap) modalCalendarWrap.style.display = '';
     }
+    updateModalCalendarButtonState();
 
     // Reset tab to list
     if (typeof switchModalTab === 'function') switchModalTab('list');
@@ -2369,7 +2395,7 @@ function renderModalRows(rows) {
         const countEl = document.getElementById('modal-row-count');
         if (countEl) countEl.textContent = `รวม ${totalCount} รายการ (${sortedKeys.length} หมวดหมู่)`;
     } else {
-        thead.innerHTML = `<tr><th>#</th><th>วันที่</th><th>คำอธิบาย</th><th>เจ้าหนี้ / ลูกหนี้</th><th>Bank</th><th>Category</th><th>Status</th><th style="text-align:left; padding-left:10px;">Air Code</th><th class="numeric">จำนวนเงิน (฿)</th></tr>`;
+        thead.innerHTML = `<tr><th class="modal-checkbox-col" style="width:32px; text-align:center;"><input type="checkbox" id="modal-select-all-cb" title="เลือกทั้งหมด" onchange="toggleSelectAllModalRows(this)"></th><th>#</th><th>วันที่</th><th>คำอธิบาย</th><th>เจ้าหนี้ / ลูกหนี้</th><th>Bank</th><th>Category</th><th>Status</th><th style="text-align:left; padding-left:10px;">Air Code</th><th class="numeric">จำนวนเงิน (฿)</th></tr>`;
 
         // Calculate total first across ALL rows
         rows.forEach(row => {
@@ -2409,14 +2435,27 @@ function renderModalRows(rows) {
                 <td style="text-align:left; padding-left:10px;"><span style="color:#fcd34d; font-weight:600;">${airCode}</span></td>
                 <td class="numeric ${amtClass}">฿${checkValue(numAmt)}</td>
             `;
+            const cbTd = document.createElement('td');
+            cbTd.className = 'modal-checkbox-col';
+            cbTd.style.textAlign = 'center';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'modal-row-checkbox';
+            cb.checked = _modalSelectedRows.has(row);
+            cb.addEventListener('change', () => toggleModalRowSelect(cb, row));
+            cbTd.appendChild(cb);
+            tr.insertBefore(cbTd, tr.firstChild);
             fragment.appendChild(tr);
         });
 
         if (rows.length > (window._modalRenderLimit || 200)) {
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td colspan="8" style="text-align:center; padding:15px; cursor:pointer; color:#38bdf8; font-weight:bold; background:rgba(255,255,255,0.05); transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'" onclick="loadMoreModalRows()">👇 โหลดเพิ่มเติม... (เหลืออีก ${rows.length - (window._modalRenderLimit || 200)} รายการ)</td>`;
+            tr.innerHTML = `<td colspan="10" style="text-align:center; padding:15px; cursor:pointer; color:#38bdf8; font-weight:bold; background:rgba(255,255,255,0.05); transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'" onclick="loadMoreModalRows()">👇 โหลดเพิ่มเติม... (เหลืออีก ${rows.length - (window._modalRenderLimit || 200)} รายการ)</td>`;
             fragment.appendChild(tr);
         }
+
+        // Reflect current selection state on the "select all" header checkbox
+        updateModalSelectAllHeaderState(rows);
 
         tbody.appendChild(fragment);
 
@@ -2458,22 +2497,70 @@ function loadMoreModalRows() {
     filterModalTable();
 }
 
+// -------------------------------------------------
+// CHECKBOX ROW SELECTION (for PDF export of detail modal)
+// -------------------------------------------------
+function toggleModalRowSelect(checkboxEl, row) {
+    if (checkboxEl.checked) {
+        _modalSelectedRows.add(row);
+    } else {
+        _modalSelectedRows.delete(row);
+    }
+    updateModalSelectAllHeaderState(_currentModalFilteredRows || []);
+}
+
+function toggleSelectAllModalRows(headerCheckboxEl) {
+    const rows = _currentModalFilteredRows || [];
+    if (headerCheckboxEl.checked) {
+        rows.forEach(r => _modalSelectedRows.add(r));
+    } else {
+        rows.forEach(r => _modalSelectedRows.delete(r));
+    }
+    const tbody = document.getElementById('modal-table-body');
+    if (tbody) {
+        tbody.querySelectorAll('.modal-row-checkbox').forEach(cb => { cb.checked = headerCheckboxEl.checked; });
+    }
+}
+
+function updateModalSelectAllHeaderState(rows) {
+    const headerCb = document.getElementById('modal-select-all-cb');
+    if (!headerCb) return;
+    const selectedCount = rows.filter(r => _modalSelectedRows.has(r)).length;
+    headerCb.checked = rows.length > 0 && selectedCount === rows.length;
+    headerCb.indeterminate = selectedCount > 0 && selectedCount < rows.length;
+}
+
 function exportModalPdf(type) {
     const isBank = type === 'bank';
     const sourceTable = document.getElementById(isBank ? 'bank-modal-table' : 'modal-table');
     const title = document.getElementById(isBank ? 'bank-modal-title' : 'modal-title').textContent;
     const mode = isBank ? _bankModalViewMode : _detailModalViewMode;
 
-    const footerCount = document.getElementById(isBank ? 'bank-modal-row-count' : 'modal-row-count').textContent;
-    const footerTotal = document.getElementById(isBank ? 'bank-modal-totals' : 'modal-total-amount').innerText.replace(/฿/g, '');
+    let footerCount = document.getElementById(isBank ? 'bank-modal-row-count' : 'modal-row-count').textContent;
+    let footerTotal = document.getElementById(isBank ? 'bank-modal-totals' : 'modal-total-amount').innerText.replace(/฿/g, '');
 
     // We will generate the FULL table body for export
     // If it's the detail modal, use the currently filtered rows if they exist
-    const rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
-    
+    let rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
+
+    // If the user ticked specific checkboxes in the detail (Income/Expense) list view, export only those rows
+    const usingRowSelection = !isBank && !_isModalBankSource && mode !== 'group' && _modalSelectedRows.size > 0;
+    if (usingRowSelection) {
+        const filteredBySelection = rows.filter(r => _modalSelectedRows.has(r));
+        if (filteredBySelection.length > 0) {
+            rows = filteredBySelection;
+            footerCount = `${rows.length} รายการ`;
+            let selectedSum = 0;
+            rows.forEach(r => { selectedSum += getRowAmount(r, _modalType); });
+            footerTotal = checkValue(selectedSum);
+        }
+    }
+
     // Create a container for the export table
     const tableClone = sourceTable.cloneNode(true);
     tableClone.removeAttribute('id');
+    const checkboxHeaderTh = tableClone.querySelector('thead th.modal-checkbox-col');
+    if (checkboxHeaderTh) checkboxHeaderTh.remove();
     const tbodyClone = tableClone.querySelector('tbody');
     tbodyClone.innerHTML = '';
 
@@ -2817,6 +2904,12 @@ function exportModalPdf(type) {
   .modal-amount-income { color: #15803d !important; font-weight: 700; }
   .modal-amount-expense { color: #b91c1c !important; font-weight: 700; }
   .ftr { border-top: 2px solid #1e3a5f; padding-top: 10px; display: flex; justify-content: space-between; font-weight: 700; font-size: 10pt; color: #1e3a5f; margin-top: 10px; }
+  .sel-badge { display: inline-block; margin-top: 6px; padding: 3px 12px; border-radius: 12px; background: #fef9c3; color: #92400e; font-weight: 700; font-size: 8pt; border: 1px solid #fde68a; }
+  .sig-block { display: flex; justify-content: space-between; margin-top: 46px; page-break-inside: avoid; }
+  .sig-col { width: 30%; text-align: center; font-size: 8.5pt; color: #1e293b; }
+  .sig-line { border-bottom: 1px solid #64748b; height: 34px; margin: 0 6px 8px 6px; }
+  .sig-label { font-weight: 700; color: #1e3a5f; }
+  .sig-date { color: #64748b; font-size: 7.5pt; margin-top: 4px; }
   @media print { @page { size: A4 portrait; margin: 1cm; } body { padding: 0; } }
 </style>
 </head>
@@ -2825,9 +2918,15 @@ function exportModalPdf(type) {
   <h1>รายงานสรุปข้อมูลทางการเงิน</h1>
   <h2>${title}</h2>
   <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : 'รายการละเอียด'} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}</p>
+  ${usingRowSelection ? `<p class="sel-badge">เฉพาะรายการที่เลือก</p>` : ''}
 </div>
 ${tableHtml}
 <div class="ftr"><span>${footerCount}</span><span>${footerTotal}</span></div>
+<div class="sig-block">
+  <div class="sig-col"><div class="sig-line"></div><div class="sig-label">ผู้จัดทำ</div><div class="sig-date">วันที่ ....../....../......</div></div>
+  <div class="sig-col"><div class="sig-line"></div><div class="sig-label">ผู้ตรวจสอบ</div><div class="sig-date">วันที่ ....../....../......</div></div>
+  <div class="sig-col"><div class="sig-line"></div><div class="sig-label">ผู้รับเอกสาร</div><div class="sig-date">วันที่ ....../....../......</div></div>
+</div>
 <script>
   window.onload=function(){
     try { history.pushState({}, '', 'Report'); } catch(e) {}
@@ -2836,219 +2935,6 @@ ${tableHtml}
 <\/script>
 </body></html>`);
     printWindow.document.close();
-}
-
-// -------------------------------------------------
-// EXPORT MODAL TO EXCEL (.xlsx) — Income / Expense / Bank
-// -------------------------------------------------
-function exportModalExcel(type) {
-    if (typeof XLSX === 'undefined') {
-        alert('ไม่พบไลบรารี Excel (XLSX.js) กรุณาโหลดหน้าเว็บใหม่แล้วลองอีกครั้ง');
-        return;
-    }
-
-    const isBank = type === 'bank';
-    const titleEl = document.getElementById(isBank ? 'bank-modal-title' : 'modal-title');
-    const title = (titleEl ? titleEl.textContent : 'รายงาน').trim();
-    const mode = isBank ? _bankModalViewMode : _detailModalViewMode;
-    const rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
-
-    const aoa = [];
-    let colCount = 5;
-
-    // ===== Header: ชื่อบริษัท + ชื่อรายงาน + วันที่ =====
-    aoa.push(['Thaidrill']);
-    aoa.push([title]);
-    aoa.push(['วันที่ส่งออก: ' + new Date().toLocaleString('th-TH')]);
-    aoa.push([]);
-
-    if (!isBank && _isModalBankSource) {
-        // ===== Selected Balance table =====
-        colCount = 5;
-        aoa.push(['#', 'Bank', 'Account No', 'Air Code', 'Selected Balance (฿)']);
-        const filtered = rows.filter(b => {
-            const sbKey = Object.keys(b).find(k => {
-                const normalized = k.toLowerCase().replace(/\s/g, '');
-                return normalized.includes('selected') && normalized.includes('balance');
-            });
-            return parseSafe(sbKey ? b[sbKey] : 0) !== 0;
-        });
-        let total = 0;
-        filtered.forEach((b, i) => {
-            const bankName = (b['Bank Name'] || b.bankName || b.bank || '').toString().trim();
-            const accountNum = (b['Account No'] || b.accountNo || b.account || '-').toString().trim();
-            const airCode = String(b['Air Code'] || b.airCode || b['Air code'] || b['air code'] || '-').trim();
-            const sbKey = Object.keys(b).find(k => k.toLowerCase().replace(/\s/g, '').includes('selected') && k.toLowerCase().replace(/\s/g, '').includes('balance'));
-            const amt = parseSafe(sbKey ? b[sbKey] : 0);
-            total += amt;
-            aoa.push([i + 1, bankName, accountNum, airCode, amt]);
-        });
-        aoa.push(['', '', '', 'รวมทั้งหมด', total]);
-    } else if (mode === 'group') {
-        // ===== Group summary (by Category), รวมรายละเอียดรายการย่อยครบทุกแถว =====
-        const grouped = {};
-        rows.forEach(row => {
-            const cat = row['Category'] || row.category || 'ไม่ระบุหมวดหมู่';
-            if (isBank) {
-                if (!grouped[cat]) grouped[cat] = { count: 0, in: 0, out: 0, items: [] };
-                grouped[cat].count++;
-                grouped[cat].in += Number(row['Cash In'] || row.cashIn) || 0;
-                grouped[cat].out += Number(row['Cash Out'] || row.cashOut) || 0;
-            } else {
-                if (!grouped[cat]) grouped[cat] = { count: 0, sum: 0, items: [] };
-                grouped[cat].count++;
-                grouped[cat].sum += getRowAmount(row, _modalType);
-            }
-            grouped[cat].items.push(row);
-        });
-
-        const sortedKeys = Object.keys(grouped).sort((a, b) => {
-            if (isBank) return (grouped[b].in + grouped[b].out) - (grouped[a].in + grouped[a].out);
-            return grouped[b].sum - grouped[a].sum;
-        });
-
-        if (isBank) {
-            colCount = 7;
-            aoa.push(['#', 'Category', 'คำอธิบาย', 'Air Code', 'รายการ', 'Cash In (฿)', 'Cash Out (฿)']);
-        } else {
-            colCount = 6;
-            aoa.push(['#', 'Category', 'คำอธิบาย', 'Air Code', 'รายการ', 'จำนวนเงิน (฿)']);
-        }
-
-        let grandIn = 0, grandOut = 0, grandSum = 0;
-
-        sortedKeys.forEach((cat, i) => {
-            const item = grouped[cat];
-            if (isBank) {
-                grandIn += item.in; grandOut += item.out;
-                aoa.push([i + 1, cat, '', '', item.count + ' รายการ', item.in, item.out]);
-            } else {
-                grandSum += item.sum;
-                aoa.push([i + 1, cat, '', '', item.count + ' รายการ', item.sum]);
-            }
-
-            const sortedSubItems = [...item.items].sort((a, b) => {
-                const dA = parseDateSafe(a['Date'] || a.date);
-                const dB = parseDateSafe(b['Date'] || b.date);
-                if (!dA && !dB) return 0;
-                if (!dA) return 1;
-                if (!dB) return -1;
-                return dA - dB;
-            });
-
-            sortedSubItems.forEach(row => {
-                const rawDate = row['Date'] || row.date || '';
-                let displayDate = rawDate;
-                try {
-                    const d = parseDateSafe(rawDate);
-                    if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                } catch (e) { }
-
-                const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
-                const desc = row['Description'] || row.description || '-';
-                const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
-
-                if (isBank) {
-                    const cIn = Number(row['Cash In'] || row.cashIn) || 0;
-                    const cOut = Number(row['Cash Out'] || row.cashOut) || 0;
-                    aoa.push(['', '   ' + displayDate + ' - ' + creditor, desc, airCode, '', cIn, cOut]);
-                } else {
-                    const amount = Math.abs(getRowAmount(row, _modalType));
-                    aoa.push(['', '   ' + displayDate + ' - ' + creditor, desc, airCode, '', amount]);
-                }
-            });
-        });
-
-        if (isBank) {
-            aoa.push(['', '', '', '', 'รวมทั้งหมด', grandIn, grandOut]);
-        } else {
-            aoa.push(['', '', '', '', 'รวมทั้งหมด', grandSum]);
-        }
-    } else {
-        // ===== Detail view: รายการละเอียดทั้งหมด (Income & Expense) =====
-        if (isBank) {
-            colCount = 9;
-            aoa.push(['#', 'วันที่', 'คำอธิบาย', 'Type', 'Category', 'Status', 'Air Code', 'Cash In (฿)', 'Cash Out (฿)']);
-        } else {
-            colCount = 9;
-            aoa.push(['#', 'วันที่', 'คำอธิบาย', 'เจ้าหนี้ / ลูกหนี้', 'Bank', 'Category', 'Status', 'Air Code', 'จำนวนเงิน (฿)']);
-        }
-
-        let total = 0;
-        let totalIn = 0, totalOut = 0;
-
-        rows.forEach((row, i) => {
-            const rawDate = row['Date'] || row.date || '';
-            let displayDate = rawDate;
-            try {
-                const d = parseDateSafe(rawDate);
-                if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-            } catch (e) { }
-
-            const desc = row['Description'] || row.description || '-';
-            const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '-').trim();
-
-            if (isBank) {
-                const rType = row['Type'] || row.type || '-';
-                const category = row['Category'] || row.category || '-';
-                const status = row['Status'] || row.status || '-';
-                const cIn = Number(row['Cash In'] || row.cashIn) || 0;
-                const cOut = Number(row['Cash Out'] || row.cashOut) || 0;
-                totalIn += cIn; totalOut += cOut;
-                aoa.push([i + 1, displayDate, desc, rType, category, status, airCode, cIn, cOut]);
-            } else {
-                const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
-                const bank = row['Bank'] || row.bank || '-';
-                const category = row['Category'] || row.category || '-';
-                const status = row['Status'] || row.status || '-';
-                const numAmt = getRowAmount(row, _modalType);
-                total += numAmt;
-                aoa.push([i + 1, displayDate, desc, creditor, bank, category, status, airCode, numAmt]);
-            }
-        });
-
-        if (isBank) {
-            aoa.push(['', '', '', '', '', '', 'รวมทั้งหมด', totalIn, totalOut]);
-        } else {
-            aoa.push(['', '', '', '', '', '', '', 'รวมทั้งหมด', total]);
-        }
-    }
-
-    // ===== สร้างไฟล์ Excel ด้วย SheetJS =====
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    // รวมเซลล์หัวกระดาษ (บริษัท / ชื่อรายงาน / วันที่) ให้กว้างเท่าตาราง
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: colCount - 1 } }
-    ];
-
-    // ความกว้างคอลัมน์แบบอัตโนมัติคร่าวๆ ตามเนื้อหา
-    const colWidths = [];
-    for (let c = 0; c < colCount; c++) {
-        let maxLen = 8;
-        aoa.forEach(r => {
-            const val = r[c];
-            if (val !== undefined && val !== null) {
-                const len = val.toString().length;
-                if (len > maxLen) maxLen = len;
-            }
-        });
-        colWidths.push({ wch: Math.min(maxLen + 2, 45) });
-    }
-    ws['!cols'] = colWidths;
-
-    const wb = XLSX.utils.book_new();
-    const sheetName = (title || 'Report').replace(/[\\/*?:\[\]]/g, '').substring(0, 31) || 'Report';
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
-    const now = new Date();
-    const dateStamp = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
-    const safeTitle = (title || 'Report').replace(/[\\/:*?"<>|]/g, '_').trim();
-    const filename = 'Thaidrill_' + safeTitle + '_' + dateStamp + '.xlsx';
-
-    XLSX.writeFile(wb, filename);
 }
 
 
@@ -3175,24 +3061,181 @@ function _showBankBackButton(bankName) {
 
 function filterModalTable() {
     const q = (document.getElementById('modal-search')?.value || '').toLowerCase();
-    if (!q) {
-        renderModalRows(_modalRows);
-        return;
+    let filtered = _modalRows;
+
+    // Apply calendar date filter first (if any dates are ticked in the calendar popover)
+    if (_modalCalendarSelectedDates.size > 0) {
+        filtered = filtered.filter(row => {
+            const d = parseDateSafe(row['Date'] || row.date);
+            if (!d || isNaN(d)) return false;
+            return _modalCalendarSelectedDates.has(dateKey(d));
+        });
     }
-    const filtered = _modalRows.filter(row => {
-        const fields = [
-            row['Description'], row.description,
-            row['Customer'], row.customer,
-            row['Vendor'], row.vendor,
-            row['Party'], row.party,
-            row['Name'], row.name,
-            row['Bank'], row.bank,
-            row['Category'], row.category,
-            row['Status'], row.status,
-        ].map(v => (v || '').toString().toLowerCase());
-        return fields.some(f => f.includes(q));
-    });
+
+    if (q) {
+        filtered = filtered.filter(row => {
+            const fields = [
+                row['Description'], row.description,
+                row['Customer'], row.customer,
+                row['Vendor'], row.vendor,
+                row['Party'], row.party,
+                row['Name'], row.name,
+                row['Bank'], row.bank,
+                row['Category'], row.category,
+                row['Status'], row.status,
+            ].map(v => (v || '').toString().toLowerCase());
+            return fields.some(f => f.includes(q));
+        });
+    }
+
     renderModalRows(filtered);
+}
+
+// -------------------------------------------------
+// CALENDAR DATE FILTER (Income/Expense detail modal)
+// -------------------------------------------------
+function dateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Map of 'YYYY-MM-DD' -> { income: bool, expense: bool }, built from the broader filtered
+// transaction set so the calendar shows income/expense dots regardless of which single-type
+// modal (income or expense) is currently open.
+function buildModalCalendarDateMap() {
+    const map = {};
+    const source = typeof _lastFilteredTransactions !== 'undefined' && _lastFilteredTransactions ? _lastFilteredTransactions : [];
+    source.forEach(row => {
+        const d = parseDateSafe(row['Date'] || row.date);
+        if (!d || isNaN(d)) return;
+        const key = dateKey(d);
+        const type = getRowType(row);
+        if (!map[key]) map[key] = { income: false, expense: false };
+        if (type === 'income') map[key].income = true;
+        else if (type === 'expense') map[key].expense = true;
+    });
+    return map;
+}
+
+function toggleModalCalendarPopover(e) {
+    if (e) e.stopPropagation();
+    const pop = document.getElementById('modal-calendar-popover');
+    if (!pop) return;
+    const isOpen = pop.style.display !== 'none';
+    if (isOpen) {
+        closeModalCalendarPopover();
+    } else {
+        // Default the visible month to the month of the most recent row, if we don't have one yet
+        if (!window._modalCalendarUserNavigated) {
+            const withDates = _modalRows.map(r => parseDateSafe(r['Date'] || r.date)).filter(d => d && !isNaN(d));
+            if (withDates.length > 0) {
+                const latest = new Date(Math.max.apply(null, withDates.map(d => d.getTime())));
+                _modalCalendarViewMonth = new Date(latest.getFullYear(), latest.getMonth(), 1);
+            }
+        }
+        pop.style.display = 'block';
+        renderModalCalendarPopover();
+        document.addEventListener('click', _modalCalendarOutsideClickHandler);
+    }
+}
+
+function closeModalCalendarPopover() {
+    const pop = document.getElementById('modal-calendar-popover');
+    if (pop) pop.style.display = 'none';
+    document.removeEventListener('click', _modalCalendarOutsideClickHandler);
+}
+
+function _modalCalendarOutsideClickHandler(e) {
+    const wrap = document.querySelector('.modal-calendar-wrap');
+    if (wrap && !wrap.contains(e.target)) closeModalCalendarPopover();
+}
+
+function navModalCalendarMonth(delta) {
+    window._modalCalendarUserNavigated = true;
+    _modalCalendarViewMonth = new Date(_modalCalendarViewMonth.getFullYear(), _modalCalendarViewMonth.getMonth() + delta, 1);
+    renderModalCalendarPopover();
+}
+
+function toggleModalCalendarDay(key) {
+    if (_modalCalendarSelectedDates.has(key)) {
+        _modalCalendarSelectedDates.delete(key);
+    } else {
+        _modalCalendarSelectedDates.add(key);
+    }
+    renderModalCalendarPopover();
+    updateModalCalendarButtonState();
+    filterModalTable();
+}
+
+function clearModalCalendarSelection() {
+    _modalCalendarSelectedDates = new Set();
+    renderModalCalendarPopover();
+    updateModalCalendarButtonState();
+    filterModalTable();
+}
+
+function updateModalCalendarButtonState() {
+    const btn = document.getElementById('btn-modal-calendar');
+    const badge = document.getElementById('modal-calendar-count');
+    if (!btn || !badge) return;
+    const count = _modalCalendarSelectedDates.size;
+    if (count > 0) {
+        btn.classList.add('has-selection');
+        badge.style.display = 'inline-flex';
+        badge.textContent = count;
+    } else {
+        btn.classList.remove('has-selection');
+        badge.style.display = 'none';
+        badge.textContent = '';
+    }
+}
+
+const THAI_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+const THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+function renderModalCalendarPopover() {
+    const pop = document.getElementById('modal-calendar-popover');
+    if (!pop) return;
+
+    const dateMap = buildModalCalendarDateMap();
+    const year = _modalCalendarViewMonth.getFullYear();
+    const month = _modalCalendarViewMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startWeekday = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    let cellsHtml = '';
+    for (let i = 0; i < startWeekday; i++) {
+        cellsHtml += `<div class="cal-day cal-empty"></div>`;
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+        const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const info = dateMap[key];
+        const isSelected = _modalCalendarSelectedDates.has(key);
+        let dotsHtml = '';
+        if (info && (info.income || info.expense)) {
+            dotsHtml = `<div class="cal-dots">${info.income ? '<span class="cal-dot income"></span>' : ''}${info.expense ? '<span class="cal-dot expense"></span>' : ''}</div>`;
+        }
+        cellsHtml += `<div class="cal-day${isSelected ? ' selected' : ''}" onclick="toggleModalCalendarDay('${key}')">${day}${dotsHtml}</div>`;
+    }
+
+    const selectedCount = _modalCalendarSelectedDates.size;
+
+    pop.innerHTML = `
+        <div class="cal-header">
+            <button type="button" class="cal-nav-btn" onclick="navModalCalendarMonth(-1)">&#8249;</button>
+            <span class="cal-title">${THAI_MONTHS[month]} ${year + 543}</span>
+            <button type="button" class="cal-nav-btn" onclick="navModalCalendarMonth(1)">&#8250;</button>
+        </div>
+        <div class="cal-weekdays">${THAI_WEEKDAYS.map(w => `<div class="cal-weekday">${w}</div>`).join('')}</div>
+        <div class="cal-grid">${cellsHtml}</div>
+        <div class="cal-footer">
+            <span class="cal-footer-text">${selectedCount > 0 ? `เลือกแล้ว ${selectedCount} วัน` : 'ยังไม่ได้เลือกวันที่'}</span>
+            <button type="button" class="cal-clear-btn" onclick="clearModalCalendarSelection()" ${selectedCount === 0 ? 'disabled style="opacity:.4; cursor:default;"' : ''}>ล้างที่เลือก</button>
+        </div>
+    `;
+
+    // Prevent clicks inside the popover from bubbling to the outside-click handler
+    pop.onclick = (e) => e.stopPropagation();
 }
 
 function closeDetailModal(event, force = false) {
@@ -3205,6 +3248,7 @@ function closeDetailModal(event, force = false) {
 // ESC key to close any open modal
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+        closeModalCalendarPopover();
         closeDetailModal(null, true);
         closeBankDetailModal(null, true);
     }
@@ -4476,24 +4520,19 @@ function openDateExportModal() {
     }
 }
 
-// คำนวณวันที่ของเดือน/ปีปัจจุบัน ที่มีข้อมูลในระบบ (ใช้ตี dot + เปิดให้กดเลือกได้)
-// รวมข้อมูลจากทั้ง allTransactions (รายการจริง) และ allPlans (แผนจ่าย/รับ) เข้าด้วยกัน
-// แก้ไข: เดิมใช้ allPlans แทนที่ allTransactions ทั้งหมดถ้า allPlans ไม่ว่าง (แม้ allPlans จะไม่มีรายการของเดือนนั้นเลย)
-// ทำให้ทุกวันในปฏิทินถูกล็อกกดไม่ได้ (.has-data ไม่ติด) เมื่อเดือนที่เลือกไม่มีแผนจ่าย ทั้งที่มีรายการจริงอยู่
+// คำนวณวันที่ของเดือน/ปีปัจจุบัน ที่มีข้อมูลในระบบ (ใช้ตี dot)
 function cf2GetDatesWithData(year, month) {
     const set = new Set();
-    const sources = [];
-    if (typeof allTransactions !== 'undefined' && allTransactions) sources.push(allTransactions);
-    if (typeof allPlans !== 'undefined' && allPlans) sources.push(allPlans);
-
-    sources.forEach(sourceData => {
-        sourceData.forEach(row => {
-            const d = parseDateSafe(row['Date'] || row.date);
-            if (!d) return;
-            if (d.getFullYear() === year && d.getMonth() + 1 === month) {
-                set.add(d.getDate());
-            }
-        });
+    const sourceData = (typeof allPlans !== 'undefined' && allPlans && allPlans.length > 0)
+        ? allPlans
+        : (typeof allTransactions !== 'undefined' ? allTransactions : []);
+    if (!sourceData) return set;
+    sourceData.forEach(row => {
+        const d = parseDateSafe(row['Date'] || row.date);
+        if (!d) return;
+        if (d.getFullYear() === year && d.getMonth() + 1 === month) {
+            set.add(d.getDate());
+        }
     });
     return set;
 }
@@ -4603,212 +4642,6 @@ function closeExportDateModal(event, force = false) {
     }
 }
 
-// ===== Daily PDF Report: view-toggle helpers (all / category / name) =====
-
-function pdfReportExtractRow(row, i) {
-    const rawDate = row['Date'] || row.date || '';
-    const dateObj = parseDateSafe(rawDate);
-    const dateDisplay = dateObj ? `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()+543}` : (rawDate || '-');
-    const desc = row['Description'] || row.description || '-';
-    const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
-    const aircodeRaw = row['Air Code'] || row['Aircode'] || row.aircode || '-';
-    const aircodeList = String(aircodeRaw).split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
-    let aircode = aircodeRaw;
-    if (aircodeList.length > 1) {
-        const half = Math.ceil(aircodeList.length / 2);
-        const line1 = aircodeList.slice(0, half).join(', ');
-        const line2 = aircodeList.slice(half).join(', ');
-        aircode = `${line1}<br>${line2}`;
-    }
-    const category = row['Category'] || row.category || '-';
-    const status = row['Status'] || row.status || 'Actual';
-    const statusClass = status.toLowerCase().includes('plan') ? 'status-plan' : 'status-actual';
-    const cIn = parseFloat(row['Incoming'] || row['Cash In']) || 0;
-    const cOut = parseFloat(row['Payment'] || row['Cash Out']) || 0;
-    const bal = parseFloat(row['Balance']) || 0;
-    return { i, dateDisplay, desc, creditor, aircode, category, status, statusClass, cIn, cOut, bal };
-}
-
-function buildPdfReportSummaryHTML(totalIn, totalOut, net) {
-    return `
-        <div class="pdf-summary-box income">
-            <div class="pdf-summary-label">รับเข้ารวม</div>
-            <div class="pdf-summary-value">${checkValue(totalIn)}</div>
-        </div>
-        <div class="pdf-summary-box expense">
-            <div class="pdf-summary-label">จ่ายออกรวม</div>
-            <div class="pdf-summary-value">${checkValue(totalOut)}</div>
-        </div>
-        <div class="pdf-summary-box net">
-            <div class="pdf-summary-label">คงเหลือ (แถวสุดท้าย)</div>
-            <div class="pdf-summary-value ${net < 0 ? 'expense-text' : ''}">${checkValue(net)}</div>
-        </div>
-    `;
-}
-
-function buildPdfReportFlatHTML(rows) {
-    let totalIn = 0, totalOut = 0, lastBalance = 0;
-    const bodyRows = rows.map((row, i) => {
-        const r = pdfReportExtractRow(row, i);
-        totalIn += r.cIn;
-        totalOut += r.cOut;
-        if (r.bal !== 0) lastBalance = r.bal;
-        return `
-            <tr>
-                <td style="text-align:center;">${r.i + 1}</td>
-                <td style="text-align:center; white-space: nowrap;">${r.dateDisplay}</td>
-                <td>${r.creditor}</td>
-                <td>${r.desc}</td>
-                <td style="text-align:center;">${r.aircode}</td>
-                <td>${r.category}</td>
-                <td style="text-align:center;"><span class="status-badge ${r.statusClass}">${r.status}</span></td>
-                <td class="numeric ${r.cIn > 0 ? 'income-text' : ''}">${r.cIn > 0 ? checkValue(r.cIn) : '-'}</td>
-                <td class="numeric ${r.cOut > 0 ? 'expense-text' : ''}">${r.cOut > 0 ? checkValue(r.cOut) : '-'}</td>
-                <td class="numeric ${r.bal < 0 ? 'expense-text' : ''}">${r.bal !== 0 ? checkValue(r.bal) : '-'}</td>
-            </tr>
-        `;
-    }).join('');
-
-    return `
-        <table class="pdf-table">
-            <thead>
-                <tr>
-                    <th style="width: 3%;">#</th>
-                    <th style="width: 9%; white-space: nowrap;">วันที่</th>
-                    <th style="width: 13%;">เจ้าหนี้/ลูกหนี้</th>
-                    <th style="width: 14%;">คำอธิบาย</th>
-                    <th style="width: 7%; white-space: nowrap;">Air Code</th>
-                    <th style="width: 9%; white-space: nowrap;">Category</th>
-                    <th style="width: 6%; white-space: nowrap;">Status</th>
-                    <th class="numeric" style="width: 13%;">รับเข้า (฿)</th>
-                    <th class="numeric" style="width: 13%;">จ่ายออก (฿)</th>
-                    <th class="numeric" style="width: 13%;">คงเหลือ (฿)</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${bodyRows}
-                <tr class="total-row">
-                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดสุทธิ</td>
-                    <td class="numeric income-text">${checkValue(totalIn)}</td>
-                    <td class="numeric expense-text">${checkValue(totalOut)}</td>
-                    <td></td>
-                </tr>
-            </tbody>
-        </table>
-        <div class="pdf-summary">
-            ${buildPdfReportSummaryHTML(totalIn, totalOut, lastBalance)}
-        </div>
-    `;
-}
-
-function buildPdfReportGroupedHTML(rows, groupBy) {
-    const groups = [];
-    const groupIndex = {};
-    let totalIn = 0, totalOut = 0, lastBalance = 0;
-
-    rows.forEach((row, i) => {
-        const r = pdfReportExtractRow(row, i);
-        totalIn += r.cIn;
-        totalOut += r.cOut;
-        if (r.bal !== 0) lastBalance = r.bal;
-        const key = groupBy === 'name' ? r.creditor : r.category;
-        if (!(key in groupIndex)) {
-            groupIndex[key] = groups.length;
-            groups.push({ key, rows: [], subIn: 0, subOut: 0 });
-        }
-        const g = groups[groupIndex[key]];
-        g.rows.push(r);
-        g.subIn += r.cIn;
-        g.subOut += r.cOut;
-    });
-
-    const bodyRows = groups.map((g, gIdx) => {
-        const detailRows = g.rows.map(r => `
-            <tr class="pdfrpt-detail-${gIdx}" style="display:none; background:#f8fafc;">
-                <td style="text-align:center;">${r.i + 1}</td>
-                <td style="text-align:center; white-space: nowrap;">${r.dateDisplay}</td>
-                <td>${r.creditor}</td>
-                <td>${r.desc}</td>
-                <td style="text-align:center;">${r.aircode}</td>
-                <td>${r.category}</td>
-                <td style="text-align:center;"><span class="status-badge ${r.statusClass}">${r.status}</span></td>
-                <td class="numeric ${r.cIn > 0 ? 'income-text' : ''}">${r.cIn > 0 ? checkValue(r.cIn) : '-'}</td>
-                <td class="numeric ${r.cOut > 0 ? 'expense-text' : ''}">${r.cOut > 0 ? checkValue(r.cOut) : '-'}</td>
-                <td class="numeric ${r.bal < 0 ? 'expense-text' : ''}">${r.bal !== 0 ? checkValue(r.bal) : '-'}</td>
-            </tr>
-        `).join('');
-
-        const groupRow = `
-            <tr class="pdfrpt-group-row" style="background:#eef2ff; font-weight:600;">
-                <td colspan="6" style="font-size:11px; padding:8px 12px; border-left:3px solid #1d4ed8;">
-                    <span class="pdfrpt-expand no-print" onclick="toggleReportGroupExpand(${gIdx})" id="pdfrpt-expand-${gIdx}">+</span>
-                    ${g.key} <span style="font-size:10px; font-weight:400; color:#64748b;">(${g.rows.length} รายการ)</span>
-                </td>
-                <td></td>
-                <td class="numeric income-text" style="font-size:11px; padding:8px 12px;">${checkValue(g.subIn)}</td>
-                <td class="numeric expense-text" style="font-size:11px; padding:8px 12px;">${checkValue(g.subOut)}</td>
-                <td></td>
-            </tr>
-        `;
-        return groupRow + detailRows;
-    }).join('');
-
-    return `
-        <table class="pdf-table">
-            <thead>
-                <tr>
-                    <th style="width: 3%;">#</th>
-                    <th style="width: 9%; white-space: nowrap;">วันที่</th>
-                    <th style="width: 13%;">เจ้าหนี้/ลูกหนี้</th>
-                    <th style="width: 14%;">คำอธิบาย</th>
-                    <th style="width: 7%; white-space: nowrap;">Air Code</th>
-                    <th style="width: 9%; white-space: nowrap;">Category</th>
-                    <th style="width: 6%; white-space: nowrap;">Status</th>
-                    <th class="numeric" style="width: 13%;">รับเข้า (฿)</th>
-                    <th class="numeric" style="width: 13%;">จ่ายออก (฿)</th>
-                    <th class="numeric" style="width: 13%;">คงเหลือ (฿)</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${bodyRows}
-                <tr class="total-row">
-                    <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดสุทธิ</td>
-                    <td class="numeric income-text">${checkValue(totalIn)}</td>
-                    <td class="numeric expense-text">${checkValue(totalOut)}</td>
-                    <td></td>
-                </tr>
-            </tbody>
-        </table>
-        <div class="pdf-summary">
-            ${buildPdfReportSummaryHTML(totalIn, totalOut, lastBalance)}
-        </div>
-    `;
-}
-
-function buildPdfReportBodyHTML(rows, mode) {
-    if (mode === 'category') return buildPdfReportGroupedHTML(rows, 'category');
-    if (mode === 'name') return buildPdfReportGroupedHTML(rows, 'name');
-    return buildPdfReportFlatHTML(rows);
-}
-
-function toggleReportGroupExpand(gIdx) {
-    const rowsEls = document.querySelectorAll('.pdfrpt-detail-' + gIdx);
-    const icon = document.getElementById('pdfrpt-expand-' + gIdx);
-    if (!rowsEls.length) return;
-    const nowHidden = rowsEls[0].style.display === 'none';
-    rowsEls.forEach(el => { el.style.display = nowHidden ? 'table-row' : 'none'; });
-    if (icon) icon.textContent = nowHidden ? '−' : '+';
-}
-
-function switchPdfReportView(mode) {
-    window._pdfReportMode = mode;
-    document.querySelectorAll('.pdf-view-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
-    });
-    const reportBody = document.getElementById('pdf-report-body');
-    if (reportBody) reportBody.innerHTML = buildPdfReportBodyHTML(window._pdfReportRows || [], mode);
-}
-
 function exportDailyPdf() {
     const monthSel = document.getElementById('export-month');
     const yearSel = document.getElementById('export-year');
@@ -4841,19 +4674,8 @@ function exportDailyPdf() {
     // Close modal first so alerts are visible
     closeExportDateModal(null, true);
 
-    // แก้ไข: เดิมใช้ allPlans แทนที่ allTransactions ทั้งหมดถ้า allPlans ไม่ว่าง (แม้ allPlans จะไม่มีรายการของวันนั้นเลย)
-    // ทำให้ระบบแจ้ง "ไม่พบรายการข้อมูล" ทั้งที่มีรายการจริงอยู่ใน allTransactions
-    // แก้เป็นรวมข้อมูลจากทั้งสองแหล่ง (allTransactions + allPlans) แล้วตัดรายการซ้ำออก
-    // Daily PDF Report ดูเฉพาะจากชีต Cash_Flow_Summary (allSummaryActuals + allPlans) เท่านั้น
-    // (ไม่เอา allTransactions จากชีต Transactions เข้ามาปน — การ์ดแดชบอร์ดยังใช้ allTransactions เหมือนเดิม)
-    const combinedSource = [...(allSummaryActuals || []), ...(allPlans || [])];
-    const seenRowKeys = new Set();
-    const sourceData = combinedSource.filter(row => {
-        const key = JSON.stringify(row);
-        if (seenRowKeys.has(key)) return false;
-        seenRowKeys.add(key);
-        return true;
-    });
+    // Use allPlans (Cash_Flow_Summary). Fall back to allTransactions if allPlans is empty.
+    const sourceData = (allPlans && allPlans.length > 0) ? allPlans : allTransactions;
 
     const filteredRows = sourceData.filter(row => {
         const d = parseDateSafe(row['Date'] || row.date);
@@ -5073,8 +4895,7 @@ function exportDailyPdf() {
         .numeric { text-align: right !important; white-space: nowrap; }
         .income-text { color: #059669; font-weight: 600; }
         .expense-text { color: #dc2626; font-weight: 600; }
-        .total-row { font-weight: 700; background: #fdf3d8; font-size: 11px; }
-        .total-row td { border-top: 2px solid #b7791f; }
+        .total-row { font-weight: 700; background: #f1f5f9; }
         .status-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
         .status-actual { background: #dcfce7; color: #166534; }
         .status-plan { background: #fef9c3; color: #854d0e; }
@@ -5088,17 +4909,11 @@ function exportDailyPdf() {
         .pdf-summary-box.income .pdf-summary-value { color: #059669; }
         .pdf-summary-box.expense .pdf-summary-value { color: #dc2626; }
         .pdf-summary-box.net .pdf-summary-value { color: #1d4ed8; }
-        .pdf-summary-box.net .pdf-summary-value.expense-text { color: #dc2626 !important; }
-        .pdf-view-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
-        .pdf-view-btn { font-family: 'Sarabun', sans-serif; font-size: 11px; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f1f5f9; color: #475569; cursor: pointer; }
-        .pdf-view-btn.active { background: #1d4ed8; border-color: #1d4ed8; color: #ffffff; }
-        .pdfrpt-expand { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; background: #e2e8f0; color: #334155; font-size: 11px; font-weight: 700; cursor: pointer; margin-right: 6px; }
         @media print {
             .pdf-table th { background: #1d4ed8 !important; color: #ffffff !important; }
             .pdf-summary-box.income { background: #dcfce7 !important; }
             .pdf-summary-box.expense { background: #fee2e2 !important; }
             .pdf-summary-box.net { background: #eff6ff !important; }
-            .no-print { display: none !important; }
         }
     `;
     pdfContainer.appendChild(style);
@@ -5127,22 +4942,104 @@ function exportDailyPdf() {
     `;
     pdfContainer.appendChild(header);
 
-    const viewToggleBar = document.createElement('div');
-    viewToggleBar.className = 'pdf-view-toggle no-print';
-    viewToggleBar.innerHTML = `
-        <button type="button" class="pdf-view-btn active" data-mode="all" onclick="switchPdfReportView('all')">รายการทั้งหมด</button>
-        <button type="button" class="pdf-view-btn" data-mode="category" onclick="switchPdfReportView('category')">จัดกลุ่มตาม Category</button>
-        <button type="button" class="pdf-view-btn" data-mode="name" onclick="switchPdfReportView('name')">สรุปตามเจ้าหนี้/ลูกหนี้</button>
+    const table = document.createElement('table');
+    table.className = 'pdf-table';
+    
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th style="width: 3%;">#</th>
+                <th style="width: 11%; white-space: nowrap;">วันที่</th>
+                <th style="width: 14%;">เจ้าหนี้/ลูกหนี้</th>
+                <th style="width: 17%;">คำอธิบาย</th>
+                <th style="width: 7%;">Air Code</th>
+                <th style="width: 9%;">Category</th>
+                <th style="width: 6%;">Status</th>
+                <th class="numeric" style="width: 11%;">รับเข้า (฿)</th>
+                <th class="numeric" style="width: 11%;">จ่ายออก (฿)</th>
+                <th class="numeric" style="width: 11%;">คงเหลือ (฿)</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
     `;
-    pdfContainer.appendChild(viewToggleBar);
+    
+    const tbody = table.querySelector('tbody');
+    let totalIn = 0;
+    let totalOut = 0;
+    let lastBalance = 0;
 
-    const reportBody = document.createElement('div');
-    reportBody.id = 'pdf-report-body';
-    pdfContainer.appendChild(reportBody);
+    filteredRows.forEach((row, i) => {
+        const rawDate = row['Date'] || row.date || '';
+        const dateObj = parseDateSafe(rawDate);
+        const dateDisplay = dateObj ? `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}/${dateObj.getFullYear()+543}` : (rawDate || '-');
+        const desc = row['Description'] || row.description || '-';
+        const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
+        const aircodeRaw = row['Air Code'] || row['Aircode'] || row.aircode || '-';
+        const aircodeList = String(aircodeRaw).split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+        let aircode = aircodeRaw;
+        if (aircodeList.length > 1) {
+            const half = Math.ceil(aircodeList.length / 2);
+            const line1 = aircodeList.slice(0, half).join(', ');
+            const line2 = aircodeList.slice(half).join(', ');
+            aircode = `${line1}<br>${line2}`;
+        }
+        const category = row['Category'] || row.category || '-';
+        const status = row['Status'] || row.status || 'Actual';
+        const statusClass = status.toLowerCase().includes('plan') ? 'status-plan' : 'status-actual';
 
-    window._pdfReportRows = filteredRows;
-    window._pdfReportMode = 'all';
-    reportBody.innerHTML = buildPdfReportBodyHTML(filteredRows, 'all');
+        const cIn = parseFloat(row['Incoming'] || row['Cash In']) || 0;
+        const cOut = parseFloat(row['Payment'] || row['Cash Out']) || 0;
+        const bal = parseFloat(row['Balance']) || 0;
+
+        totalIn += cIn;
+        totalOut += cOut;
+        if (bal !== 0) lastBalance = bal;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="text-align:center;">${i + 1}</td>
+            <td style="text-align:center; white-space: nowrap;">${dateDisplay}</td>
+            <td>${creditor}</td>
+            <td>${desc}</td>
+            <td style="text-align:center;">${aircode}</td>
+            <td>${category}</td>
+            <td style="text-align:center;"><span class="status-badge ${statusClass}">${status}</span></td>
+            <td class="numeric ${cIn > 0 ? 'income-text' : ''}">${cIn > 0 ? checkValue(cIn) : '-'}</td>
+            <td class="numeric ${cOut > 0 ? 'expense-text' : ''}">${cOut > 0 ? checkValue(cOut) : '-'}</td>
+            <td class="numeric">${bal !== 0 ? checkValue(bal) : '-'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'total-row';
+    totalTr.innerHTML = `
+        <td colspan="7" style="text-align: right; padding-right: 15px;">รวมยอดประจำวัน</td>
+        <td class="numeric income-text">${checkValue(totalIn)}</td>
+        <td class="numeric expense-text">${checkValue(totalOut)}</td>
+        <td></td>
+    `;
+    tbody.appendChild(totalTr);
+    pdfContainer.appendChild(table);
+
+    const net = lastBalance;
+    const summary = document.createElement('div');
+    summary.className = 'pdf-summary';
+    summary.innerHTML = `
+        <div class="pdf-summary-box income">
+            <div class="pdf-summary-label">รับเข้ารวม</div>
+            <div class="pdf-summary-value">${checkValue(totalIn)}</div>
+        </div>
+        <div class="pdf-summary-box expense">
+            <div class="pdf-summary-label">จ่ายออกรวม</div>
+            <div class="pdf-summary-value">${checkValue(totalOut)}</div>
+        </div>
+        <div class="pdf-summary-box net">
+            <div class="pdf-summary-label">คงเหลือ (แถวสุดท้าย)</div>
+            <div class="pdf-summary-value">${checkValue(net)}</div>
+        </div>
+    `;
+    pdfContainer.appendChild(summary);
 
     // ===== SHOW PREVIEW =====
     // Store config for later use by confirmExportPdf
@@ -5220,8 +5117,6 @@ function confirmExportPdf() {
     tr    { page-break-inside: avoid; page-break-after: auto; }
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
-    tr.total-row  { page-break-after: avoid; break-after: avoid; }
-    .pdf-summary  { page-break-before: avoid; break-before: avoid; page-break-inside: avoid; break-inside: avoid; }
 </style>
 </head>
 <body>${reportHTML}
