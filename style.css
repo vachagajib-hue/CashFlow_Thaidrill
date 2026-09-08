@@ -4270,10 +4270,36 @@ body.hide-balances .sidebar-bank-total-badge span {
 .modal-table-wrap {
     flex: 1;
     overflow-y: auto;
+    overflow-x: auto;
+    min-width: 0;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.07);
     background: rgba(0, 0, 0, 0.2);
     min-height: 300px;
+}
+
+/* --- Keep the rightmost (amount/total) column visible at all times, --- */
+/* --- even while scrolling the table horizontally on narrow windows. --- */
+#modal-table thead th:last-child,
+#bank-modal-table thead th:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 11;
+    background: rgba(10, 16, 28, 0.98);
+    box-shadow: -8px 0 12px -6px rgba(0, 0, 0, 0.5);
+}
+
+#modal-table tbody td:last-child:not([colspan]),
+#bank-modal-table tbody td:last-child:not([colspan]) {
+    position: sticky;
+    right: 0;
+    background: #0c1420;
+    box-shadow: -8px 0 12px -6px rgba(0, 0, 0, 0.5);
+}
+
+#modal-table tbody tr:hover td:last-child:not([colspan]),
+#bank-modal-table tbody tr:hover td:last-child:not([colspan]) {
+    background: #0f1b2c;
 }
 
 /* Modern Slim Scrollbar */
