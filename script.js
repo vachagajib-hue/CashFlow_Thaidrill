@@ -74,6 +74,20 @@ function normalizeName(name) {
     return name.toString().replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// \u0E14\u0E36\u0E07\u0E04\u0E48\u0E32 Remark (\u0E04\u0E2D\u0E25\u0E31\u0E21\u0E19\u0E4C P) \u0E41\u0E1A\u0E1A\u0E44\u0E21\u0E48\u0E2A\u0E19\u0E15\u0E31\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E40\u0E25\u0E47\u0E01-\u0E43\u0E2B\u0E0D\u0E48/\u0E0A\u0E48\u0E2D\u0E07\u0E27\u0E48\u0E32\u0E07\u0E0A\u0E37\u0E48\u0E2D\u0E04\u0E2D\u0E25\u0E31\u0E21\u0E19\u0E4C
+// \u0E01\u0E31\u0E19\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E01\u0E23\u0E13\u0E35 API \u0E2A\u0E48\u0E07\u0E0A\u0E37\u0E48\u0E2D\u0E04\u0E2D\u0E25\u0E31\u0E21\u0E19\u0E4C\u0E21\u0E32\u0E44\u0E21\u0E48\u0E15\u0E23\u0E07\u0E40\u0E1B\u0E4A\u0E30\u0E01\u0E31\u0E1A "Remark"
+function getRemarkValue(row) {
+    if (!row) return '';
+    for (let key in row) {
+        const k = key.toString().trim().toLowerCase();
+        if (k === 'remark' || k === 'remarks' || key === '\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38' || k.includes('remark')) {
+            const v = row[key];
+            if (v !== null && v !== undefined && v.toString().trim()) return v.toString().trim();
+        }
+    }
+    return '';
+}
+
 // Utility: Robust Row Detection & Value Extraction
 function getRowType(row) {
     // 1. ดึงค่าจากคอลัมน์หลัก Type (ตามที่คุณแจ้งมาว่าอยู่ในคอลัมน์ E) - ให้ความสำคัญสูงสุด
@@ -200,6 +214,7 @@ let selectedGroups = new Set();
 let selectedPartyTypes = new Set();
 let selectedMonths = new Set();
 let selectedYears = new Set();
+let selectedRemarks = new Set();
 let allTcCategories = [];
 let selectedTcCategories = new Set();
 
@@ -520,6 +535,7 @@ function populateFilterDropdowns(transactions, plans) {
     const days = new Set();
     const months = new Set();
     const years = new Set();
+    const remarks = new Set();
     const monthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
         'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
@@ -529,6 +545,9 @@ function populateFilterDropdowns(transactions, plans) {
 
         const grp = row['Group'] || row.group;
         if (grp) groups.add(grp.toString().trim());
+
+        const rmk = getRemarkValue(row);
+        if (rmk) remarks.add(rmk);
 
         const rawDate = row['Date'] || row.date;
         if (rawDate) {
@@ -595,6 +614,7 @@ function populateFilterDropdowns(transactions, plans) {
     renderCheckboxDropdown('ms-month-list', [...months].sort((a, b) => a - b), selectedMonths,
         m => `${String(m).padStart(2, '0')} - ${monthNames[m - 1]}`, applyFilters);
     renderCheckboxDropdown('ms-year-list', [...years].sort((a, b) => b - a), selectedYears, null, applyFilters);
+    renderCheckboxDropdown('ms-remark-list', [...remarks].sort(), selectedRemarks, null, applyFilters);
 
     // Day Multi-Select Filter
     availableDays = [...days].sort((a, b) => a - b).map(d => String(d).padStart(2, '0'));
@@ -679,6 +699,12 @@ function applyFilters() {
             if (!selectedGroups.has(g)) return false;
         }
 
+        // 3b. Remark filter (multi-select)
+        if (selectedRemarks.size > 0) {
+            const r = getRemarkValue(row);
+            if (!selectedRemarks.has(r)) return false;
+        }
+
         // 4. Party Type filter (multi-select)
         if (selectedPartyTypes.size > 0) {
             const actualType = getRowType(row); // 'income' or 'expense'
@@ -734,7 +760,7 @@ function applyFilters() {
     _lastFilteredTransactions = filteredTransactions;
     _lastFilteredPlans = filteredPlans;
 
-    const isFiltered = selectedCreditors.size > 0 || selectedCategories.size > 0 || selectedGroups.size > 0 || selectedPartyTypes.size > 0 || selectedDays.size > 0 || selectedMonths.size > 0 || selectedYears.size > 0;
+    const isFiltered = selectedCreditors.size > 0 || selectedCategories.size > 0 || selectedGroups.size > 0 || selectedPartyTypes.size > 0 || selectedDays.size > 0 || selectedMonths.size > 0 || selectedYears.size > 0 || selectedRemarks.size > 0;
 
     window.tableRenderLimit = 150; // Reset load limit on filter change
 
@@ -2073,7 +2099,8 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPartyTypes.clear();
         selectedMonths.clear();
         selectedYears.clear();
-        ['ms-category-list','ms-group-list','ms-partytype-list','ms-month-list','ms-year-list'].forEach(listId => {
+        selectedRemarks.clear();
+        ['ms-category-list','ms-group-list','ms-partytype-list','ms-month-list','ms-year-list','ms-remark-list'].forEach(listId => {
             document.querySelectorAll(`#${listId} input[type=checkbox]`).forEach(cb => cb.checked = false);
             _updateGenericBadge(listId, new Set());
         });
@@ -3281,6 +3308,7 @@ function _updateGenericBadge(listId, selectedSet) {
         'ms-partytype-list': 'ms-partytype-badge',
         'ms-month-list': 'ms-month-badge',
         'ms-year-list': 'ms-year-badge',
+        'ms-remark-list': 'ms-remark-badge',
     };
     const badgeId = map[listId];
     if (!badgeId) return;
@@ -3337,6 +3365,7 @@ function toggleGroupDropdown(e) { e.stopPropagation(); _openGenericDropdown(e.cu
 function togglePartyTypeDropdown(e) { e.stopPropagation(); _openGenericDropdown(e.currentTarget, 'ms-partytype-dropdown'); }
 function toggleMonthDropdown(e) { e.stopPropagation(); _openGenericDropdown(e.currentTarget, 'ms-month-dropdown'); }
 function toggleYearDropdown(e) { e.stopPropagation(); _openGenericDropdown(e.currentTarget, 'ms-year-dropdown'); }
+function toggleRemarkDropdown(e) { e.stopPropagation(); _openGenericDropdown(e.currentTarget, 'ms-remark-dropdown'); }
 
 function _clearGenericFilter(listId, selectedSet) {
     selectedSet.clear();
@@ -3365,6 +3394,8 @@ function monthClearAll() { _clearGenericFilter('ms-month-list', selectedMonths);
 function monthSelectAll() { _selectAllGenericFilter('ms-month-list', selectedMonths); }
 function yearClearAll() { _clearGenericFilter('ms-year-list', selectedYears); }
 function yearSelectAll() { _selectAllGenericFilter('ms-year-list', selectedYears); }
+function remarkClearAll() { _clearGenericFilter('ms-remark-list', selectedRemarks); }
+function remarkSelectAll() { _selectAllGenericFilter('ms-remark-list', selectedRemarks); }
 
 function updateTcCategorySelectText() {
     const textEl = document.getElementById('tc-category-selected-text');
@@ -4474,14 +4505,11 @@ function dayClear() {
     updateDayUI();
 }
 
-// Close day dropdown when clicking outside
-document.addEventListener('click', (e) => {
-    const dayWrap = document.getElementById('day-wrapper');
-    const dayDrop = document.getElementById('day-dropdown');
-    if (dayWrap && dayDrop && !dayWrap.contains(e.target)) {
-        dayDrop.style.display = 'none';
-    }
-});
+// หมายเหตุ: เดิมมี handler เก่าที่ปิด day-dropdown ด้วย dayWrap.contains(e.target)
+// ซึ่งใช้ไม่ได้อีกต่อไปหลังจาก _openGenericDropdown() ย้าย dropdown ไปไว้ที่ document.body
+// (ทำให้ dayWrap.contains() คืนค่า false เสมอ แล้วสั่ง dayDrop.style.display='none' แบบ inline
+//  ซึ่งไปทับ class .open ถาวร กดเปิดใหม่ไม่ขึ้นอีกเลย) — ลบออก เพราะ handler ที่ถูกต้อง
+// (เช็คจาก .generic-ms-dropdown.open ทุกตัวรวมถึง day-dropdown) มีอยู่แล้วด้านบนของไฟล์นี้
 
 // -------------------------------------------------
 // EXPORT DAILY PDF REPORT
