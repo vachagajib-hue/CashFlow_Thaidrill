@@ -7,7 +7,7 @@
     <title>CashFlow</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=20260713-fixoverflow">
+    <link rel="stylesheet" href="style.css?v=20260909-remarkinline">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -230,10 +230,27 @@
                                         </div>
                                     </div>
                                 </div>
-                                <!-- แถว 2 คอลัมน์ 4: รีเซ็ต -->
+                                <!-- แถว 2 คอลัมน์ 4: Remark + รีเซ็ต (รวมในเซลล์เดียว) -->
                                 <div class="hfilter-group" style="justify-content:flex-end;">
-                                    <label style="visibility:hidden;">-</label>
-                                    <button id="btn-reset-filters" class="btn-reset">↺ รีเซ็ต</button>
+                                    <label>📝 Remark</label>
+                                    <div style="display:flex; gap:8px; align-items:stretch; width:100%;">
+                                        <div class="multi-select-wrapper" style="flex:1; min-width:0;">
+                                            <div class="search-trigger-box fgrid-trigger" id="ms-remark-trigger" onclick="toggleRemarkDropdown(event)">
+                                                <div class="input-ghost-wrapper" style="flex:1; pointer-events:none;">
+                                                    <span style="font-size:13px; color:#f1f5f9;">ทั้งหมด</span>
+                                                </div>
+                                                <span id="ms-remark-badge" class="selected-badge">ทั้งหมด</span>
+                                            </div>
+                                            <div class="generic-ms-dropdown" id="ms-remark-dropdown">
+                                                <div class="ms-actions">
+                                                    <div class="ms-action-btn" onclick="remarkSelectAll()">✅ เลือกทั้งหมด</div>
+                                                    <div class="ms-action-btn" onclick="remarkClearAll()">❌ ล้าง</div>
+                                                </div>
+                                                <div class="ms-list" id="ms-remark-list"></div>
+                                            </div>
+                                        </div>
+                                        <button id="btn-reset-filters" class="btn-reset" style="white-space:nowrap;">↺ รีเซ็ต</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -714,7 +731,7 @@
             </div>
         </div>
 
-        <script src="script.js?v=20260713-fixoverflow"></script>
+        <script src="script.js?v=20260909-remarkinline"></script>
 </body>
 
 </html>
