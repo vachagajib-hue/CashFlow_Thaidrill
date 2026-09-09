@@ -2279,6 +2279,7 @@ function renderModalRows(rows) {
     let total = 0;
 
     const isGrouped = typeof _detailModalViewMode !== 'undefined' && _detailModalViewMode === 'group';
+    const isGroupedByName = typeof _detailModalViewMode !== 'undefined' && _detailModalViewMode === 'groupname';
     const fragment = document.createDocumentFragment();
 
     if (_isModalBankSource) {
@@ -2421,6 +2422,103 @@ function renderModalRows(rows) {
 
         const countEl = document.getElementById('modal-row-count');
         if (countEl) countEl.textContent = `รวม ${totalCount} รายการ (${sortedKeys.length} หมวดหมู่)`;
+    } else if (isGroupedByName) {
+        thead.innerHTML = `<tr><th>#</th><th>ชื่อ (เจ้าหนี้/ลูกหนี้)</th><th>หมวดหมู่</th><th style="text-align:left; padding-left:10px;">Air Code</th><th>รายการ</th><th class="numeric">จำนวนเงิน (฿)</th></tr>`;
+        const grouped = {};
+        rows.forEach(row => {
+            const nm = (row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '').toString().trim() || 'ไม่ระบุชื่อ';
+            if (!grouped[nm]) grouped[nm] = { count: 0, sum: 0, items: [] };
+            grouped[nm].count++;
+            grouped[nm].sum += getRowAmount(row, _modalType);
+            grouped[nm].items.push(row);
+        });
+
+        const sortedKeys = Object.keys(grouped).sort((a, b) => grouped[b].sum - grouped[a].sum);
+        let totalCount = 0;
+
+        sortedKeys.forEach((nm, i) => {
+            const item = grouped[nm];
+            total += item.sum;
+            totalCount += item.count;
+
+            let amtClass = 'modal-amount-expense';
+            if (_modalType === 'income') amtClass = 'modal-amount-income';
+            else if (_modalType === 'balance') {
+                amtClass = item.sum >= 0 ? 'modal-amount-income' : 'modal-amount-expense';
+            }
+
+            const hasSubRows = item.items.length > 0;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${i + 1}</td>
+                <td>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        ${hasSubRows ? `<button class="btn-ms-expand" onclick="toggleModalGroupExpand(event, 'modal-name-${i}')" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#fff; border-radius:4px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; cursor:pointer;">+</button>` : ''}
+                        <span>${nm}</span>
+                    </div>
+                </td>
+                <td></td>
+                <td></td>
+                <td>${item.count} รายการ</td>
+                <td class="numeric ${amtClass}">฿${checkValue(item.sum)}</td>
+            `;
+            fragment.appendChild(tr);
+
+            if (hasSubRows) {
+                // Sort sub-items by date ascending
+                const sortedSubItems = [...item.items].sort((a, b) => {
+                    const dA = parseDateSafe(a['Date'] || a.date);
+                    const dB = parseDateSafe(b['Date'] || b.date);
+                    if (!dA && !dB) return 0;
+                    if (!dA) return 1;
+                    if (!dB) return -1;
+                    return dA - dB;
+                });
+                sortedSubItems.forEach((row, subIdx) => {
+                    const subTr = document.createElement('tr');
+                    subTr.className = `modal-sub-row modal-name-${i}`;
+                    subTr.style.display = 'none';
+                    subTr.style.background = 'rgba(255,255,255,0.02)';
+
+                    const rawDate = row['Date'] || row.date || '';
+                    let displayDate = rawDate;
+                    try {
+                        const d = parseDateSafe(rawDate);
+                        if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    } catch (e) { }
+
+                    const category = row['Category'] || row.category || '-';
+                    const desc = row['Description'] || row.description || '-';
+                    const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
+                    const amount = getRowAmount(row, _modalType);
+                    const rowType = getRowType(row);
+                    const rowAmtClass = rowType === 'income' ? 'modal-amount-income' : 'modal-amount-expense';
+
+                    subTr.innerHTML = `
+                        <td style="color:#64748b; font-size:11px; text-align:center; white-space:nowrap;">
+                            <span>${displayDate}</span>
+                        </td>
+                        <td style="padding-left: 30px; text-align: left;">
+                            <span style="color:#94a3b8; font-size:11px;" title="${desc}">${desc}</span>
+                        </td>
+                        <td style="text-align: left; padding-left: 10px;">
+                            <span style="color:#cbd5e1; font-size:12px;" title="${category}">${category}</span>
+                        </td>
+                        <td style="color:#fcd34d; font-size:11px; text-align:left; padding-left:10px;">
+                            <span>${airCode}</span>
+                        </td>
+                        <td></td>
+                        <td class="numeric" style="color:#f97316; font-size:12px; font-weight:600;">฿${checkValue(Math.abs(amount))}</td>
+                    `;
+                    fragment.appendChild(subTr);
+                });
+            }
+        });
+
+        tbody.appendChild(fragment);
+
+        const countEl2 = document.getElementById('modal-row-count');
+        if (countEl2) countEl2.textContent = `รวม ${totalCount} รายการ (${sortedKeys.length} ชื่อ)`;
     } else {
         thead.innerHTML = `<tr><th class="modal-checkbox-col" style="width:32px; text-align:center;"><input type="checkbox" id="modal-select-all-cb" title="เลือกทั้งหมด" onchange="toggleSelectAllModalRows(this)"></th><th>#</th><th>วันที่</th><th>คำอธิบาย</th><th>เจ้าหนี้ / ลูกหนี้</th><th>Bank</th><th>Category</th><th>Status</th><th style="text-align:left; padding-left:10px;">Air Code</th><th class="numeric">จำนวนเงิน (฿)</th></tr>`;
 
@@ -2515,6 +2613,7 @@ function updateModalView(mode) {
     _detailModalViewMode = mode;
     document.getElementById('btn-view-all').classList.toggle('active', mode === 'all');
     document.getElementById('btn-view-group').classList.toggle('active', mode === 'group');
+    document.getElementById('btn-view-group-name')?.classList.toggle('active', mode === 'groupname');
     window._modalRenderLimit = 200; // Reset limit when switching views
     filterModalTable();
 }
@@ -2571,7 +2670,7 @@ function exportModalPdf(type) {
     let rows = isBank ? _bankModalRows : (_currentModalFilteredRows || _modalRows);
 
     // If the user ticked specific checkboxes in the detail (Income/Expense) list view, export only those rows
-    const usingRowSelection = !isBank && !_isModalBankSource && mode !== 'group' && _modalSelectedRows.size > 0;
+    const usingRowSelection = !isBank && !_isModalBankSource && mode !== 'group' && mode !== 'groupname' && _modalSelectedRows.size > 0;
     if (usingRowSelection) {
         const filteredBySelection = rows.filter(r => _modalSelectedRows.has(r));
         if (filteredBySelection.length > 0) {
@@ -2618,7 +2717,8 @@ function exportModalPdf(type) {
             `;
             tbodyClone.appendChild(tr);
         });
-    } else if (mode === 'group') {
+    } else if (mode === 'group' || mode === 'groupname') {
+        const isNameGroup = mode === 'groupname';
         const expandedCategories = new Set();
         const uiExpandBtns = sourceTable.querySelectorAll('.btn-ms-expand');
         uiExpandBtns.forEach(btn => {
@@ -2630,7 +2730,9 @@ function exportModalPdf(type) {
 
         const grouped = {};
         rows.forEach(row => {
-            const cat = row['Category'] || row.category || 'ไม่ระบุหมวดหมู่';
+            const cat = isNameGroup
+                ? ((row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '').toString().trim() || 'ไม่ระบุชื่อ')
+                : (row['Category'] || row.category || 'ไม่ระบุหมวดหมู่');
             if (isBank) {
                 if (!grouped[cat]) grouped[cat] = { count: 0, in: 0, out: 0, items: [] };
                 grouped[cat].count++;
@@ -2696,7 +2798,9 @@ function exportModalPdf(type) {
                         if (d && !isNaN(d)) displayDate = d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     } catch (e) { }
 
-                    const creditor = row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-';
+                    const creditor = isNameGroup
+                        ? (row['Category'] || row.category || '-')
+                        : (row['Name'] || row.name || row['Customer/Vendor'] || row['Customer'] || row['Vendor'] || row['Party'] || row.customer || row.party || '-');
                     const desc = row['Description'] || row.description || '-';
                     const airCode = String(row['Air Code'] || row.airCode || row['Air code'] || row['air code'] || '').trim();
 
@@ -2804,7 +2908,7 @@ function exportModalPdf(type) {
             <col style="width:20%">
             <col style="width:20%">
         </colgroup>`;
-    } else if (mode === 'group') {
+    } else if (mode === 'group' || mode === 'groupname') {
         if (isBank) {
             // # | Category | Description | Air Code | Count | CashIn | CashOut
             colgroupHtml = `<colgroup>
@@ -2872,7 +2976,7 @@ function exportModalPdf(type) {
             thead th:nth-child(3), tbody td:nth-child(3),
             thead th:nth-child(4), tbody td:nth-child(4) { text-align: left !important; }
         `;
-    } else if (mode === 'group') {
+    } else if (mode === 'group' || mode === 'groupname') {
         // Group Summary: 1=#, 2=Category/Name, 3=Description, 4=Air Code, 5=Count, 6=Total
         pdfExtraStyles = `
             thead th:nth-child(2), tbody td:nth-child(2),
@@ -2944,7 +3048,7 @@ function exportModalPdf(type) {
 <div class="hdr">
   <h1>รายงานสรุปข้อมูลทางการเงิน</h1>
   <h2>${title}</h2>
-  <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : 'รายการละเอียด'} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}</p>
+  <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : (mode === 'groupname' ? 'สรุปตามชื่อ' : 'รายการละเอียด')} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}</p>
   ${usingRowSelection ? `<p class="sel-badge">เฉพาะรายการที่เลือก</p>` : ''}
 </div>
 ${tableHtml}
