@@ -546,9 +546,6 @@ function populateFilterDropdowns(transactions, plans) {
         const grp = row['Group'] || row.group;
         if (grp) groups.add(grp.toString().trim());
 
-        const rmk = getRemarkValue(row);
-        if (rmk) remarks.add(rmk);
-
         const rawDate = row['Date'] || row.date;
         if (rawDate) {
             const d = parseDateSafe(rawDate);
@@ -558,6 +555,13 @@ function populateFilterDropdowns(transactions, plans) {
                 years.add(d.getFullYear());
             }
         }
+    });
+
+    // ตัวกรอง Remark: ดึงเฉพาะจากชีต Transactions เท่านั้น (ไม่รวม Plans)
+    // เพราะค่า Remark เช่น "บัญชีพักรอเคลียร์"/"ส่งบัญชีบันทึก" มีความหมายเฉพาะรายการจริง
+    transactions.forEach(row => {
+        const rmk = getRemarkValue(row);
+        if (rmk) remarks.add(rmk);
     });
 
     const updateSelect = (id, items, formatter = null) => {
