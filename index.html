@@ -185,6 +185,16 @@
                                                 <div class="ms-action-btn" onclick="daySelectAll()" style="color:#c8a84b;">✅ เลือกทั้งหมด</div>
                                                 <div class="ms-action-btn" onclick="dayClear()">❌ ล้าง</div>
                                             </div>
+                                            <!-- ปุ่มเลือกช่วงวันที่ด่วน (ไม่ต้องติ๊กทีละวัน) -->
+                                            <div style="display:flex; gap:6px; padding:6px 8px 0;">
+                                                <div class="ms-action-btn" style="flex:1; text-align:center; font-size:11px;" onclick="daySelectRange(1,15)">1-15</div>
+                                                <div class="ms-action-btn" style="flex:1; text-align:center; font-size:11px;" onclick="daySelectRange(16,31)">16-31</div>
+                                            </div>
+                                            <div style="display:flex; gap:6px; align-items:center; padding:6px 8px 2px;">
+                                                <input type="number" id="day-range-from" min="1" max="31" placeholder="จาก" style="width:50%; box-sizing:border-box; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:6px 8px; color:#f1f5f9; font-size:12px; font-family:inherit; outline:none;">
+                                                <input type="number" id="day-range-to" min="1" max="31" placeholder="ถึง" style="width:50%; box-sizing:border-box; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:6px 8px; color:#f1f5f9; font-size:12px; font-family:inherit; outline:none;">
+                                                <div class="ms-action-btn" style="white-space:nowrap; font-size:11px;" onclick="daySelectCustomRange()">เลือกช่วง</div>
+                                            </div>
                                             <div style="padding:6px 8px 2px;">
                                                 <input type="text" id="day-search-input" placeholder="ค้นหาวัน..." oninput="renderDayList(this.value)" style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:6px 10px; color:#f1f5f9; font-size:12px; font-family:inherit; outline:none;">
                                             </div>
