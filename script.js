@@ -1013,7 +1013,25 @@ function updateSummary(isFiltered = false) {
 // -------------------------------------------------
 // UPDATE OVERVIEW CHART
 // -------------------------------------------------
+let _ocChartUpdateInFlight = false;
+let _ocChartUpdateQueued = false;
+
 function updateOverviewChart() {
+    if (_ocChartUpdateInFlight) {
+        _ocChartUpdateQueued = true;
+        return;
+    }
+    _ocChartUpdateInFlight = true;
+    Promise.resolve(_doUpdateOverviewChart()).finally(() => {
+        _ocChartUpdateInFlight = false;
+        if (_ocChartUpdateQueued) {
+            _ocChartUpdateQueued = false;
+            updateOverviewChart();
+        }
+    });
+}
+
+function _doUpdateOverviewChart() {
     const monthlyIncome = new Array(12).fill(0);
     const monthlyExpense = new Array(12).fill(0);
     const monthlyContractWages = new Array(12).fill(0);
@@ -1176,13 +1194,17 @@ function updateOverviewChart() {
 
 
     if (comparisonChart) {
-        comparisonChart.updateOptions({ xaxis: { categories: thaiMonthCategories } });
-        comparisonChart.updateSeries(seriesData);
+        const p1 = comparisonChart.updateOptions({ xaxis: { categories: thaiMonthCategories } });
+        const p2 = comparisonChart.updateSeries(seriesData);
+        return Promise.all([
+            Promise.resolve(p1).catch(() => {}),
+            Promise.resolve(p2).catch(() => {})
+        ]);
     } else {
         const chartEl = document.querySelector("#comparison-chart");
         if (chartEl) {
             comparisonChart = new ApexCharts(chartEl, chartData);
-            comparisonChart.render();
+            return Promise.resolve(comparisonChart.render()).catch(() => {});
         }
     }
 }
