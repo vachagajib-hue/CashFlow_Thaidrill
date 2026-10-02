@@ -611,14 +611,16 @@ function populateFilterDropdowns(transactions, plans) {
     updateSelect('filter-group', [...groups].sort());
 
     // แทนที่ด้วย checkbox dropdown
-    renderCheckboxDropdown('ms-category-list', [...categories].sort(), selectedCategories, null, applyFilters);
-    renderCheckboxDropdown('ms-group-list', [...groups].sort(), selectedGroups, null, applyFilters);
+    // หมายเหตุ: ใช้ applyFiltersDebounced (ไม่ใช่ applyFilters ตรงๆ) กันหน้าเว็บค้างเวลาติ๊กเลือก
+    // หลายรายการรัวๆ ติดกัน (ดูคำอธิบายเต็มที่คอมเมนต์เหนือฟังก์ชัน applyFiltersDebounced())
+    renderCheckboxDropdown('ms-category-list', [...categories].sort(), selectedCategories, null, applyFiltersDebounced);
+    renderCheckboxDropdown('ms-group-list', [...groups].sort(), selectedGroups, null, applyFiltersDebounced);
     renderCheckboxDropdown('ms-partytype-list', ['Vendor', 'Customer'], selectedPartyTypes,
-        v => v === 'Vendor' ? 'Expense (รายจ่าย)' : 'Income (รายรับ)', applyFilters);
+        v => v === 'Vendor' ? 'Expense (รายจ่าย)' : 'Income (รายรับ)', applyFiltersDebounced);
     renderCheckboxDropdown('ms-month-list', [...months].sort((a, b) => a - b), selectedMonths,
-        m => `${String(m).padStart(2, '0')} - ${monthNames[m - 1]}`, applyFilters);
-    renderCheckboxDropdown('ms-year-list', [...years].sort((a, b) => b - a), selectedYears, null, applyFilters);
-    renderCheckboxDropdown('ms-remark-list', [...remarks].sort(), selectedRemarks, null, applyFilters);
+        m => `${String(m).padStart(2, '0')} - ${monthNames[m - 1]}`, applyFiltersDebounced);
+    renderCheckboxDropdown('ms-year-list', [...years].sort((a, b) => b - a), selectedYears, null, applyFiltersDebounced);
+    renderCheckboxDropdown('ms-remark-list', [...remarks].sort(), selectedRemarks, null, applyFiltersDebounced);
 
     // Day Multi-Select Filter
     availableDays = [...days].sort((a, b) => a - b).map(d => String(d).padStart(2, '0'));
@@ -655,6 +657,21 @@ function resetBankFilters() {
 // -------------------------------------------------
 // FILTER: Apply all active filters and re-render
 // -------------------------------------------------
+// แก้ปัญหาหน้าเว็บค้าง/ไม่ตอบสนอง เวลาติ๊กเลือกหลายรายการรัวๆ (เช่น เลือกวันที่ 27,28,29,30,31
+// ติดกันเร็วๆ) เพราะเดิมทุกครั้งที่ติ๊ก 1 checkbox จะเรียก applyFilters() ทันที ซึ่งข้างในมีทั้งคำนวณ
+// ยอดใหม่ + รีเฟรชกราฟ ApexCharts 2 กราฟ (มี animation ~900ms ต่อครั้ง) ถ้าติ๊กรัวๆ หลายครั้งติดกัน
+// จะมีคำสั่งคำนวณ+วาดกราฟค้างซ้อนกันเป็นสิบๆ ครั้งพร้อมกัน ทำให้เบราว์เซอร์ค้าง
+// วิธีแก้: หน่วงเวลา (debounce) ให้คำนวณ/วาดกราฟจริงแค่ครั้งเดียว หลังจากหยุดติ๊กไปแล้ว 300ms
+// (ติ๊กกี่ครั้งก่อนหน้าก็ไม่เป็นไร นับจากครั้งสุดท้ายที่ติ๊กเท่านั้น)
+let _applyFiltersDebounceTimer = null;
+function applyFiltersDebounced(delay = 300) {
+    clearTimeout(_applyFiltersDebounceTimer);
+    _applyFiltersDebounceTimer = setTimeout(() => {
+        _applyFiltersDebounceTimer = null;
+        applyFilters();
+    }, delay);
+}
+
 function applyFilters() {
     function matchRow(row) {
         // 1. Creditor filter: Search across ALL columns for the selected name
@@ -3480,7 +3497,7 @@ function _clearGenericFilter(listId, selectedSet) {
     _updateGenericBadge(listId, selectedSet);
     // Uncheck all checkboxes
     document.querySelectorAll(`#${listId} input[type=checkbox]`).forEach(cb => cb.checked = false);
-    applyFilters();
+    applyFiltersDebounced();
 }
 
 function _selectAllGenericFilter(listId, selectedSet) {
@@ -3489,7 +3506,7 @@ function _selectAllGenericFilter(listId, selectedSet) {
         selectedSet.add(cb.value);
     });
     _updateGenericBadge(listId, selectedSet);
-    applyFilters();
+    applyFiltersDebounced();
 }
 
 function categoryClearAll() { _clearGenericFilter('ms-category-list', selectedCategories); }
@@ -3695,7 +3712,7 @@ function initCreditorAutocomplete() {
                 ghostText.textContent = '';
                 dropdown.classList.remove('open');
                 updateCreditorSelectText();
-                applyFilters();
+                applyFiltersDebounced();
                 renderMsList('');
             }
         }
@@ -3782,7 +3799,7 @@ function initCreditorAutocomplete() {
                     selectedCreditors.delete(name);
                 }
                 updateCreditorSelectText();
-                applyFilters();
+                applyFiltersDebounced();
             });
 
             const span = document.createElement('span');
@@ -3802,7 +3819,7 @@ function initCreditorAutocomplete() {
         currentMatches.forEach(name => selectedCreditors.add(name));
         renderMsList(searchInput.value.trim());
         updateCreditorSelectText();
-        applyFilters();
+        applyFiltersDebounced();
     });
 
     btnClear.addEventListener('click', () => {
@@ -3810,7 +3827,7 @@ function initCreditorAutocomplete() {
         searchInput.value = ''; // Clear search input
         renderMsList('');
         updateCreditorSelectText();
-        applyFilters();
+        applyFiltersDebounced();
     });
 }
 
@@ -4519,8 +4536,8 @@ function updateDayUI() {
         }
     }
 
-    // Trigger filter update
-    if (typeof applyFilters === 'function') applyFilters();
+    // Trigger filter update (ใช้ตัวหน่วงเวลา กันหน้าเว็บค้างเวลาติ๊กเลือกวันที่หลายวันรัวๆ ติดกัน)
+    if (typeof applyFiltersDebounced === 'function') applyFiltersDebounced();
 }
 
 function renderDayList(q = '') {
@@ -4611,6 +4628,30 @@ function dayClear() {
     matches.forEach(d => selectedDays.delete(d));
     renderDayList(q);
     updateDayUI();
+}
+
+// เลือกวันที่ทั้งช่วงในคลิกเดียว (เช่น 1-15 หรือ 16-31) แทนการติ๊กทีละวัน
+// เฉพาะวันที่ "มีข้อมูลจริง" (อยู่ใน availableDays) เท่านั้นที่จะถูกเลือก
+function daySelectRange(from, to) {
+    for (let d = from; d <= to; d++) {
+        const key = String(d).padStart(2, '0');
+        if (availableDays.includes(key)) selectedDays.add(key);
+    }
+    renderDayList(document.getElementById('day-search-input') ? document.getElementById('day-search-input').value : '');
+    updateDayUI();
+}
+
+// เลือกช่วงวันที่แบบกำหนดเอง จากช่อง "จาก" / "ถึง" ที่ผู้ใช้กรอกเอง
+function daySelectCustomRange() {
+    const fromEl = document.getElementById('day-range-from');
+    const toEl = document.getElementById('day-range-to');
+    let from = parseInt(fromEl && fromEl.value, 10);
+    let to = parseInt(toEl && toEl.value, 10);
+    if (isNaN(from) || isNaN(to)) return; // ยังไม่ได้กรอกครบ ไม่ต้องทำอะไร
+    if (from > to) { const tmp = from; from = to; to = tmp; } // สลับให้ถูกถ้ากรอกกลับด้าน
+    from = Math.max(1, from);
+    to = Math.min(31, to);
+    daySelectRange(from, to);
 }
 
 // หมายเหตุ: เดิมมี handler เก่าที่ปิด day-dropdown ด้วย dayWrap.contains(e.target)
