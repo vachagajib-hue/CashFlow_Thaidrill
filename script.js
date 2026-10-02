@@ -1524,7 +1524,14 @@ function _doUpdateTransactionChart() {
         let chart = existingChart;
         let updatePromise;
         if (chart) {
-            updatePromise = chart.updateOptions(data, true, true, false);
+            // สำคัญ: redrawPaths=true + animate=true (2 พารามิเตอร์ที่เคยใส่ไว้) จะบังคับให้
+            // ApexCharts คำนวณแกน/สเกลใหม่ทั้งหมด (create → init → setRange → niceScale →
+            // getPriorityFactors) ทุกครั้งที่กรองข้อมูล — ยืนยันจากการอัดคลิป Performance จริง
+            // ว่า Call Stack ช่วงค้างอยู่ในฟังก์ชันเหล่านี้ของ apexcharts.js พอดี ซึ่งเป็นโหมด
+            // "อัปเดตหนักสุด" ของ ApexCharts ทั้งที่ data.chart.animations.enabled ตั้งเป็น false
+            // ไว้แล้วแต่พารามิเตอร์ตำแหน่งนี้ไป override ทับ จึงเปลี่ยนเป็น false, false เพื่อให้
+            // อัปเดตแบบเบา (ไม่ต้องคำนวณสเกล/แอนิเมชันใหม่ทั้งหมด) แก้ค้างที่ยืนยันสาเหตุแล้ว
+            updatePromise = chart.updateOptions(data, false, false, false);
         } else {
             chart = new ApexCharts(el, data);
             updatePromise = chart.render();
