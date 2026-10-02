@@ -2751,6 +2751,29 @@ function toggleModalRowSelect(checkboxEl, row) {
     updateModalSelectAllHeaderState(_currentModalFilteredRows || []);
 }
 
+// เลือกติ๊ก (checkbox) ให้อัตโนมัติเฉพาะแถวที่วันที่อยู่ในช่วงที่กด (1-15 หรือ 16-31)
+// โดยไม่ล้างรายการที่ติ๊กไว้ก่อนหน้า (เลือกเพิ่ม ไม่ใช่แทนที่) — ใช้กับรายการที่กำลังแสดงอยู่
+// ในหน้าต่างรายละเอียดนี้เท่านั้น (ตามตัวกรองค้นหา/ปฏิทินที่ตั้งไว้ ถ้ามี)
+function modalSelectDayRange(from, to) {
+    const rows = _currentModalFilteredRows || _modalRows || [];
+    let count = 0;
+    rows.forEach(row => {
+        const rawDate = row['Date'] || row.date;
+        const d = parseDateSafe(rawDate);
+        if (d && !isNaN(d)) {
+            const day = d.getDate();
+            if (day >= from && day <= to) {
+                _modalSelectedRows.add(row);
+                count++;
+            }
+        }
+    });
+    renderModalRows(rows);
+    if (typeof showToast === 'function') {
+        showToast(`ติ๊กเลือกแล้ว ${count} รายการ (วันที่ ${from}-${to})`);
+    }
+}
+
 function toggleSelectAllModalRows(headerCheckboxEl) {
     const rows = _currentModalFilteredRows || [];
     if (headerCheckboxEl.checked) {
