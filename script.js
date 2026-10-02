@@ -89,7 +89,31 @@ function getRemarkValue(row) {
 }
 
 // Utility: Robust Row Detection & Value Extraction
+//
+// หมายเหตุประสิทธิภาพ (สำคัญ): ฟังก์ชัน getRowType / getRowAmount / getRowStatus เดิมจะวนลูป
+// Object.keys(row).forEach(...) เพื่อไล่เช็คทุกคอลัมน์ "ใหม่ทุกครั้ง" ที่ถูกเรียก และถูกเรียกซ้ำๆ
+// หลายรอบต่อการกรอง 1 ครั้ง (ใน renderTable, updateOverviewChart, updateTransactionChart ฯลฯ)
+// เมื่อข้อมูลมีจำนวนแถวเยอะ (หลักพัน-หมื่นแถว) การสแกนคอลัมน์ซ้ำซ้อนหลายรอบแบบนี้ทำให้ browser
+// ค้าง (หน้าไม่ตอบสนอง) แม้จะกดแค่ครั้งเดียว — จึงแยกตรรกะเดิมไปไว้ในฟังก์ชัน _compute...() แล้วให้
+// getRowType / getRowAmount เป็นแค่ตัวห่อที่ "แคชผลลัพธ์ไว้ที่ตัว row เอง" (เก็บใน property ที่ขึ้น
+// ต้นด้วย __ กันชนกับชื่อคอลัมน์จริง) คำนวณแค่ครั้งแรกที่เจอ row นั้น ครั้งต่อไปดึงจากแคชแทนทันที
+// ไม่ต้องสแกนคอลัมน์ซ้ำอีก — ผลลัพธ์ที่ได้เหมือนเดิมทุกประการ แค่เร็วขึ้นมาก
+//
+// สำคัญ: ค่าที่แคชไว้ต้องเซ็ตแบบ "non-enumerable" (ผ่าน Object.defineProperty) ไม่ใช่ row.__x = ...
+// ตรงๆ เพราะทั้งไฟล์นี้มีหลายจุดที่วน `for (let key in row)` หรือ `Object.keys(row)` เพื่อหาชื่อ
+// เจ้าหนี้/ลูกหนี้ (เช่นตัวกรองค้นหาเจ้าหนี้) ถ้าแคชเป็น enumerable property ธรรมดา ค่าที่แคชไว้
+// (เช่น "income"/"expense") จะหลุดไปปนในลิสต์ชื่อเจ้าหนี้ด้วย — ฟังก์ชันนี้กันปัญหานั้นไว้แล้ว
+function _setHiddenCache(row, key, value) {
+    Object.defineProperty(row, key, { value, enumerable: false, configurable: true, writable: true });
+}
+
 function getRowType(row) {
+    if (row.__rt !== undefined) return row.__rt;
+    _setHiddenCache(row, '__rt', _computeRowType(row));
+    return row.__rt;
+}
+
+function _computeRowType(row) {
     // 1. ดึงค่าจากคอลัมน์หลัก Type (ตามที่คุณแจ้งมาว่าอยู่ในคอลัมน์ E) - ให้ความสำคัญสูงสุด
     const t = (row['Type'] || row.type || '').toString().trim().toLowerCase();
     if (t === 'income' || t.includes('รับ') || t.includes('รายรับ')) return 'income';
@@ -121,7 +145,7 @@ function getRowType(row) {
         if (desc.includes(kw) || cat.includes(kw)) return 'expense';
     }
 
-    // 4. วนหาจากทุกคอลัมน์ที่มีคำว่า รับ/จ่าย
+    // 4. วนหาจากทุกคอลัมน์ที่มีคำว่า รับ/จ่าย (จุดที่หนักที่สุด — ตอนนี้ทำแค่ครั้งเดียวต่อ row เพราะแคชไว้แล้ว)
     let foundType = '';
     Object.keys(row).forEach(key => {
         const val = (row[key] || '').toString().toLowerCase();
@@ -139,29 +163,38 @@ function getRowType(row) {
 }
 
 function getRowAmount(row, targetType) {
-    let cIn = 0, cOut = 0, generic = 0;
-    let foundAmount = false;
+    // ส่วนที่หนักคือการสแกนทุกคอลัมน์หา cIn/cOut/generic — ค่าพวกนี้ไม่ได้ขึ้นกับ targetType
+    // เลยแคชไว้ที่ row ได้เลย คำนวณครั้งเดียวพอ ส่วน logic เลือกค่าตาม targetType ยังทำงานทุกครั้ง
+    // ตามปกติ (เบามาก ไม่มีลูป จึงไม่กระทบประสิทธิภาพ)
+    if (row.__amtScan === undefined) {
+        let cIn = 0, cOut = 0, generic = 0;
+        let foundAmount = false;
 
-    Object.keys(row).forEach(key => {
-        const k = key.toLowerCase();
-        const val = row[key];
+        Object.keys(row).forEach(key => {
+            const k = key.toLowerCase();
+            const val = row[key];
 
-        // 1. ลำดับความสำคัญสูงสุด: ช่องที่มีคำว่า "Amount" (เช่น # Amount ในชีท)
-        if (k.includes('amount')) {
-            generic = parseSafe(val);
-            foundAmount = true;
-        }
+            // 1. ลำดับความสำคัญสูงสุด: ช่องที่มีคำว่า "Amount" (เช่น # Amount ในชีท)
+            if (k.includes('amount')) {
+                generic = parseSafe(val);
+                foundAmount = true;
+            }
 
-        // ลำดับ 2.1: ตรงกับชื่อคอลัมน์ใน Cash_Flow_Summary เป๊ะๆ
-        if (k === 'incoming') cIn = parseSafe(val);
-        if (k === 'payment') cOut = parseSafe(val);
+            // ลำดับ 2.1: ตรงกับชื่อคอลัมน์ใน Cash_Flow_Summary เป๊ะๆ
+            if (k === 'incoming') cIn = parseSafe(val);
+            if (k === 'payment') cOut = parseSafe(val);
 
-        // ลำดับ 2.2: คำอื่นๆ ที่ใกล้เคียง (สำหรับชีตเก่า)
-        if (k.includes('cash') && k.includes('in')) cIn = cIn || parseSafe(val);
-        if (k.includes('cash') && k.includes('out')) cOut = cOut || parseSafe(val);
-        if (k === 'รับ' || k === 'รายรับ') cIn = cIn || parseSafe(val);
-        if (k === 'จ่าย' || k === 'รายจ่าย') cOut = cOut || parseSafe(val);
-    });
+            // ลำดับ 2.2: คำอื่นๆ ที่ใกล้เคียง (สำหรับชีตเก่า)
+            if (k.includes('cash') && k.includes('in')) cIn = cIn || parseSafe(val);
+            if (k.includes('cash') && k.includes('out')) cOut = cOut || parseSafe(val);
+            if (k === 'รับ' || k === 'รายรับ') cIn = cIn || parseSafe(val);
+            if (k === 'จ่าย' || k === 'รายจ่าย') cOut = cOut || parseSafe(val);
+        });
+
+        _setHiddenCache(row, '__amtScan', { cIn, cOut, generic, foundAmount });
+    }
+
+    const { cIn, cOut, generic, foundAmount } = row.__amtScan;
 
     if (targetType === 'income') {
         if (foundAmount && generic > 0) return generic;
@@ -180,6 +213,18 @@ function getRowAmount(row, targetType) {
         return type === 'income' ? amt : -amt;
     }
     return Math.abs(generic || cIn || cOut || 0);
+}
+
+// ดึงค่าสถานะ (Status) ของแถว แบบแคชไว้ที่ row (ใช้แทนโค้ดเดิมที่วน Object.keys(row).forEach()
+// ไล่หาคอลัมน์ชื่อ "status" ใหม่ทุกครั้งที่เรียก ซึ่งเป็นอีกจุดที่กินเวลามากเวลาข้อมูลเยอะ)
+function getRowStatus(row) {
+    if (row.__st !== undefined) return row.__st;
+    let rowStatus = '';
+    Object.keys(row).forEach(key => {
+        if (key.toLowerCase().includes('status')) rowStatus = (row[key] || '').toString().trim().toLowerCase();
+    });
+    _setHiddenCache(row, '__st', rowStatus);
+    return rowStatus;
 }
 
 // Utility: Sort helper
@@ -813,10 +858,7 @@ function renderTable(transactionsData, plansData = []) {
         const rowType = getRowType(row);
         const amt = getRowAmount(row, rowType);
 
-        let rowStatus = '';
-        Object.keys(row).forEach(key => {
-            if (key.toLowerCase().includes('status')) rowStatus = (row[key] || '').toString().trim().toLowerCase();
-        });
+        const rowStatus = getRowStatus(row);
 
         // ในหน้า Transactions, ถ้าไม่ระบุว่าเป็น Plan ให้ถือว่าเป็น Actual ทั้งหมด
         if (rowStatus.includes('plan')) {
@@ -833,10 +875,7 @@ function renderTable(transactionsData, plansData = []) {
         const rowType = getRowType(row);
         const amt = getRowAmount(row, rowType);
 
-        let rowStatus = '';
-        Object.keys(row).forEach(key => {
-            if (key.toLowerCase().includes('status')) rowStatus = (row[key] || '').toString().trim().toLowerCase();
-        });
+        const rowStatus = getRowStatus(row);
 
         // กรองเฉพาะรายการที่ระบุ Status ว่า 'plan' เท่านั้น (ตามที่คุณลูกค้าระบุ)
         if (rowStatus.includes('plan')) {
@@ -994,10 +1033,7 @@ function updateOverviewChart() {
         const rowType = getRowType(row);
         const amt = getRowAmount(row, rowType);
 
-        let rowStatus = '';
-        Object.keys(row).forEach(key => {
-            if (key.toLowerCase().includes('status')) rowStatus = (row[key] || '').toString().trim().toLowerCase();
-        });
+        const rowStatus = getRowStatus(row);
 
         if (!rowStatus.includes('plan')) {
             if (rowType === 'income') monthlyIncome[m] += amt;
@@ -1215,13 +1251,7 @@ function updateTransactionChart() {
         : [...allTransactions];
 
     // Filter out 'plan' status to show only actual transactions
-    filtered = filtered.filter(row => {
-        let rowStatus = '';
-        Object.keys(row).forEach(key => {
-            if (key.toLowerCase().includes('status')) rowStatus = (row[key] || '').toString().trim().toLowerCase();
-        });
-        return !rowStatus.includes('plan');
-    });
+    filtered = filtered.filter(row => !getRowStatus(row).includes('plan'));
 
     if (rawType !== 'All') {
         filtered = filtered.filter(row => {
