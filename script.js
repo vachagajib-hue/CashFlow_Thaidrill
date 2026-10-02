@@ -1239,7 +1239,29 @@ function populateTransactionChartFilters(transactions) {
     }
 }
 
+// ตัวล็อกกันเรียกซ้อน: ถ้า updateTransactionChart() ถูกเรียกอีกครั้งระหว่างที่ ApexCharts ยัง
+// อัปเดตค้างอยู่ (chart.updateOptions()/render() เป็น async ภายใน) จะ "พับคำขอไว้ก่อน" แล้วรันซ้ำ
+// อีกแค่ 1 ครั้งหลังจบรอบปัจจุบัน แทนที่จะยิงคำสั่งซ้อนกันเข้าไปเรื่อยๆ (สาเหตุของอาการค้างอีกแบบ
+// ที่พบตอนทดสอบเรียกฟังก์ชันนี้ถี่ๆ ติดกันในจังหวะสั้นมาก)
+let _tcChartUpdateInFlight = false;
+let _tcChartUpdateQueued = false;
+
 function updateTransactionChart() {
+    if (_tcChartUpdateInFlight) {
+        _tcChartUpdateQueued = true;
+        return;
+    }
+    _tcChartUpdateInFlight = true;
+    Promise.resolve(_doUpdateTransactionChart()).finally(() => {
+        _tcChartUpdateInFlight = false;
+        if (_tcChartUpdateQueued) {
+            _tcChartUpdateQueued = false;
+            updateTransactionChart();
+        }
+    });
+}
+
+function _doUpdateTransactionChart() {
     const rawType = document.getElementById('tc-filter-type')?.value || 'All';
     const rawYear = document.getElementById('tc-filter-year')?.value || 'All';
     const rawMonth = document.getElementById('tc-filter-month')?.value || 'All';
@@ -1336,13 +1358,9 @@ function updateTransactionChart() {
     const chartElIncome = document.querySelector('#transaction-chart-income');
     const chartElExpense = document.querySelector('#transaction-chart-expense');
 
-    if (window.transactionChartIncome) { window.transactionChartIncome.destroy(); window.transactionChartIncome = null; }
-    if (window.transactionChartExpense) { window.transactionChartExpense.destroy(); window.transactionChartExpense = null; }
-
-    if (chartElIncome) chartElIncome.innerHTML = '';
-    if (chartElExpense) chartElExpense.innerHTML = '';
-
     if (incomeList.length === 0 && expenseList.length === 0) {
+        if (window.transactionChartIncome) { window.transactionChartIncome.destroy(); window.transactionChartIncome = null; }
+        if (window.transactionChartExpense) { window.transactionChartExpense.destroy(); window.transactionChartExpense = null; }
         if (chartElIncome) chartElIncome.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100px;color:#64748b;font-size:14px;">ไม่พบข้อมูล</div>`;
         if (chartElExpense) chartElExpense.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100px;color:#64748b;font-size:14px;">ไม่พบข้อมูล</div>`;
         if (totalAmountEl) totalAmountEl.textContent = '-';
@@ -1350,10 +1368,24 @@ function updateTransactionChart() {
         return;
     }
 
-    const repositionLabelsIncome = () => {
-        if (!chartElIncome) return;
-        const bars = chartElIncome.querySelectorAll('path.apexcharts-bar-area');
-        const labels = chartElIncome.querySelectorAll('g.apexcharts-datalabels text.apexcharts-datalabel');
+    // หมายเหตุประสิทธิภาพ/ความเสถียร (สำคัญ — แก้ปัญหาหน้าเว็บค้างไม่ตอบสนอง):
+    // โค้ดเดิมจะ "ทำลายกราฟเก่าทิ้งแล้วสร้างกราฟ ApexCharts ใหม่ทั้งหมด" (destroy + new + render)
+    // ทุกครั้งที่ตัวกรองเปลี่ยน และผูก event "mounted"/"updated" ของ ApexCharts ไว้กับฟังก์ชันที่คอย
+    // แก้ตำแหน่ง label (ย้าย x/text-anchor) ส่วนนี้เป็นสาเหตุหลักที่ทำให้หน้าเว็บค้างไม่ตอบสนอง เพราะ
+    // การทำลาย+สร้างกราฟใหม่ซ้ำๆ พร้อม event hook ที่ไปแก้ DOM ของกราฟเอง ทำให้ ApexCharts เข้าสู่
+    // สถานะคำนวณซ้ำไม่จบ (พิสูจน์แล้วจากการจำลองด้วยข้อมูลทดสอบจริง — เรียกฟังก์ชันนี้ครั้งเดียวแล้ว
+    // เบราว์เซอร์ค้างไปเกิน 45 วินาทีโดยไม่คืนการควบคุม)
+    //
+    // วิธีแก้: เปลี่ยนมาใช้ "อัปเดตกราฟเดิมในที่" (chart.updateOptions / updateSeries) แทนการทำลาย+
+    // สร้างใหม่ทุกครั้ง (รูปแบบเดียวกับที่ updateOverviewChart() ใช้อยู่แล้วและทำงานเร็ว/เสถียรดี) และ
+    // ตัด event mounted/updated ที่เคยผูกไว้กับการแก้ตำแหน่ง label ออก เปลี่ยนเป็นจัดตำแหน่ง label
+    // แบบครั้งเดียวด้วย setTimeout หลัง render เสร็จ (ไม่ผูกกับ event ของ ApexCharts เอง จึงไม่มีทาง
+    // วนซ้ำไม่จบอีกต่อไป)
+    const pendingPromises = []; // เก็บ Promise ของการอัปเดตกราฟแต่ละอัน ไว้รวมเป็น Promise เดียวตอนจบฟังก์ชัน
+    const repositionLabelsOnce = (el) => {
+        if (!el) return;
+        const bars = el.querySelectorAll('path.apexcharts-bar-area');
+        const labels = el.querySelectorAll('g.apexcharts-datalabels text.apexcharts-datalabel');
         if (!bars.length || !labels.length) return;
         bars.forEach((bar, i) => {
             const label = labels[i];
@@ -1366,25 +1398,10 @@ function updateTransactionChart() {
         });
     };
 
-    const repositionLabelsExpense = () => {
-        if (!chartElExpense) return;
-        const bars = chartElExpense.querySelectorAll('path.apexcharts-bar-area');
-        const labels = chartElExpense.querySelectorAll('g.apexcharts-datalabels text.apexcharts-datalabel');
-        if (!bars.length || !labels.length) return;
-        bars.forEach((bar, i) => {
-            const label = labels[i];
-            if (!label) return;
-            try {
-                const bbox = bar.getBBox();
-                label.setAttribute('x', bbox.x + bbox.width + 10);
-                label.setAttribute('text-anchor', 'start');
-            } catch (e) { }
-        });
-    };
-
-    // Helper to render chart
-    const renderChart = (el, list, grandTotal, colors, repositionFn) => {
+    // Helper to render หรืออัปเดตกราฟที่มีอยู่แล้วในที่ (ไม่ destroy ทิ้งถ้าไม่จำเป็น)
+    const renderChart = (el, existingChart, list, grandTotal, colors) => {
         if (!el || list.length === 0) {
+            if (existingChart) existingChart.destroy();
             if (el) el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:150px;color:#64748b;font-size:14px;">ไม่มีข้อมูล</div>`;
             return null;
         }
@@ -1414,8 +1431,9 @@ function updateTransactionChart() {
                 toolbar: { show: false },
                 fontFamily: 'Outfit, sans-serif',
                 zoom: { enabled: false },
-                animations: { enabled: false },
-                events: { mounted: repositionFn, updated: repositionFn }
+                animations: { enabled: false }
+                // หมายเหตุ: ตัด events.mounted/updated ที่เคยผูกกับการจัดตำแหน่ง label ออกแล้ว —
+                // ดูคำอธิบายเต็มที่คอมเมนต์เหนือ repositionLabelsOnce() ด้านบน (สาเหตุหลักที่ทำให้ค้าง)
             },
             plotOptions: {
                 bar: {
@@ -1477,20 +1495,38 @@ function updateTransactionChart() {
             }
         };
 
-        const chart = new ApexCharts(el, data);
-        chart.render();
+        // ถ้ามีกราฟอยู่แล้ว (ประเภท/จำนวนคอลัมน์เดิม) ให้ "อัปเดตในที่" แทนการทำลาย+สร้างใหม่
+        // (เร็วกว่ามาก และไม่เสี่ยงปัญหาค้างที่เจอจากของเดิม) ถ้ายังไม่เคยมีกราฟมาก่อนค่อยสร้างใหม่
+        // เก็บ Promise ที่ ApexCharts คืนมาไว้ด้วย (updateOptions()/render() เป็น async ภายใน) เพื่อให้
+        // ตัวล็อกกันเรียกซ้อนด้านนอก (ดู _tcChartUpdateInFlight) รู้ว่า "รอบนี้เสร็จจริงเมื่อไหร่"
+        let chart = existingChart;
+        let updatePromise;
+        if (chart) {
+            updatePromise = chart.updateOptions(data, true, true, false);
+        } else {
+            chart = new ApexCharts(el, data);
+            updatePromise = chart.render();
+        }
+        pendingPromises.push(Promise.resolve(updatePromise).catch(() => {}));
+
+        // จัดตำแหน่ง label ครั้งเดียวหลัง render/update เสร็จ (ไม่ผูกกับ event ของ ApexCharts เอง
+        // กันไม่ให้เกิดการวนซ้ำไม่จบแบบที่เคยเกิดขึ้น)
+        setTimeout(() => repositionLabelsOnce(el), 50);
+
         return chart;
     };
 
     const incomeColors = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#047857', '#065f46', '#064e3b', '#14b8a6', '#2dd4bf', '#5eead4'];
     const expenseColors = ['#dc2626', '#ef4444', '#f87171', '#fca5a5', '#fecaca', '#b91c1c', '#991b1b', '#7f1d1d', '#e11d48', '#f43f5e', '#fb7185'];
 
-    window.transactionChartIncome = renderChart(chartElIncome, incomeList, grandTotalIncome, incomeColors, repositionLabelsIncome);
-    window.transactionChartExpense = renderChart(chartElExpense, expenseList, grandTotalExpense, expenseColors, repositionLabelsExpense);
+    window.transactionChartIncome = renderChart(chartElIncome, window.transactionChartIncome, incomeList, grandTotalIncome, incomeColors);
+    window.transactionChartExpense = renderChart(chartElExpense, window.transactionChartExpense, expenseList, grandTotalExpense, expenseColors);
 
     // Clear the old summary table if it exists
     const container = document.getElementById('tc-name-table');
     if (container) container.innerHTML = '';
+
+    return Promise.all(pendingPromises);
 }
 
 function renderTransactionTable(nameList, grandTotal, colors, transactionCount, itemCount, calculatedPcts) {
