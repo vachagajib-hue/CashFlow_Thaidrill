@@ -2798,7 +2798,11 @@ function updateModalSelectAllHeaderState(rows) {
 function exportModalPdf(type) {
     const isBank = type === 'bank';
     const sourceTable = document.getElementById(isBank ? 'bank-modal-table' : 'modal-table');
-    const title = document.getElementById(isBank ? 'bank-modal-title' : 'modal-title').textContent;
+    let title = document.getElementById(isBank ? 'bank-modal-title' : 'modal-title').textContent;
+    // ถ้ามีการเลือก Remark ให้ใช้ชื่อ Remark เป็นหัวข้อรายงานแทน
+    if (!isBank && !(typeof _isModalBankSource !== 'undefined' && _isModalBankSource) && selectedRemarks.size > 0) {
+        title = [...selectedRemarks].join(' , ');
+    }
     const mode = isBank ? _bankModalViewMode : _detailModalViewMode;
 
     let footerCount = document.getElementById(isBank ? 'bank-modal-row-count' : 'modal-row-count').textContent;
