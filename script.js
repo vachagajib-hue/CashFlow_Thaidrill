@@ -2825,6 +2825,25 @@ function exportModalPdf(type) {
         }
     }
 
+    // ช่วงวันที่ของรายการที่ออกรายงาน (ใช้แสดงแทนป้าย "เฉพาะรายการที่เลือก")
+    let dateRangeText = '';
+    if (!isBank && !_isModalBankSource) {
+        let minD = null, maxD = null;
+        rows.forEach(r => {
+            const d = parseDateSafe(r['Date'] || r.date);
+            if (d && !isNaN(d.getTime())) {
+                if (!minD || d < minD) minD = d;
+                if (!maxD || d > maxD) maxD = d;
+            }
+        });
+        if (minD && maxD) {
+            const fmtD = d => d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            dateRangeText = fmtD(minD) === fmtD(maxD)
+                ? `วันที่ ${fmtD(minD)}`
+                : `ช่วงวันที่ ${fmtD(minD)} - ${fmtD(maxD)}`;
+        }
+    }
+
     // Create a container for the export table
     const tableClone = sourceTable.cloneNode(true);
     tableClone.removeAttribute('id');
@@ -3192,7 +3211,7 @@ function exportModalPdf(type) {
   <h1>รายงานสรุปข้อมูลทางการเงิน</h1>
   <h2>${title}</h2>
   <p>รูปแบบ: ${mode === 'group' ? 'สรุปตามหมวดหมู่' : (mode === 'groupname' ? 'สรุปตามชื่อ' : 'รายการละเอียด')} &nbsp;|&nbsp; วันที่เรียกดู: ${new Date().toLocaleString('th-TH')}</p>
-  ${usingRowSelection ? `<p class="sel-badge">เฉพาะรายการที่เลือก</p>` : ''}
+  ${dateRangeText ? `<p class="sel-badge">${dateRangeText}</p>` : (usingRowSelection ? `<p class="sel-badge">เฉพาะรายการที่เลือก</p>` : '')}
 </div>
 ${tableHtml}
 <div class="ftr"><span>${footerCount}</span><span>${footerTotal}</span></div>
