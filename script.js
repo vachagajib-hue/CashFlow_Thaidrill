@@ -2261,6 +2261,7 @@ let _isModalBankSource = false;
 
 // Selected rows (by object reference) for checkbox-based PDF export in the detail modal list view
 let _modalSelectedRows = new Set();
+let _modalPickedDayRange = null; // ช่วงวันที่ล่าสุดที่กดปุ่ม 1-15 / 16-31 ({from,to})
 
 // Calendar date filter (detail modal): selected dates use 'YYYY-MM-DD' keys (Gregorian)
 let _modalCalendarSelectedDates = new Set();
@@ -2321,6 +2322,7 @@ function openDetailModal(cardId) {
 
     _modalRows = rows;
     _modalSelectedRows = new Set();
+    _modalPickedDayRange = null;
     _modalCalendarSelectedDates = new Set();
     _modalCalendarViewMonth = new Date();
     closeModalCalendarPopover();
@@ -2756,6 +2758,7 @@ function toggleModalRowSelect(checkboxEl, row) {
 // ในหน้าต่างรายละเอียดนี้เท่านั้น (ตามตัวกรองค้นหา/ปฏิทินที่ตั้งไว้ ถ้ามี)
 function modalSelectDayRange(from, to) {
     const rows = _currentModalFilteredRows || _modalRows || [];
+    _modalPickedDayRange = { from, to };
     let count = 0;
     rows.forEach(row => {
         const rawDate = row['Date'] || row.date;
@@ -2836,8 +2839,14 @@ function exportModalPdf(type) {
                 if (!maxD || d > maxD) maxD = d;
             }
         });
-        if (minD && maxD) {
-            const fmtD = d => d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const fmtD = d => d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        if (minD && maxD && usingRowSelection && _modalPickedDayRange && minD.getMonth() === maxD.getMonth() && minD.getFullYear() === maxD.getFullYear()) {
+            // กดปุ่มช่วง 1-15 / 16-31 → แสดงตามช่วงของปุ่ม (ไม่เกินวันสุดท้ายของเดือน)
+            const lastDay = new Date(minD.getFullYear(), minD.getMonth() + 1, 0).getDate();
+            const s = new Date(minD.getFullYear(), minD.getMonth(), _modalPickedDayRange.from);
+            const e = new Date(minD.getFullYear(), minD.getMonth(), Math.min(_modalPickedDayRange.to, lastDay));
+            dateRangeText = `ช่วงวันที่ ${fmtD(s)} - ${fmtD(e)}`;
+        } else if (minD && maxD) {
             dateRangeText = fmtD(minD) === fmtD(maxD)
                 ? `วันที่ ${fmtD(minD)}`
                 : `ช่วงวันที่ ${fmtD(minD)} - ${fmtD(maxD)}`;
